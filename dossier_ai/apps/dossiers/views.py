@@ -1,0 +1,118 @@
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.db.models import Count
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
+
+from apps.accounts.permissions import role_required
+from apps.audit.models import audit
+from apps.documents.models import Document
+from apps.documents.services import UploadRejected, expand_uploads
+from apps.findings.models import ExtractedField
+from core.contracts import DocumentType
+from . import specs
+from .models import Dossier, DossierStatus
+from .services import DossierAnalysisFacade
+
+
+@login_required
+def dashboard(request):
+    qs = Dossier.objects
+    ctx = {
+        "total": qs.count(),
+        "pending": qs.exclude(status=DossierStatus.ANALYZED).count(),
+        "analyzed": qs.filter(status=DossierStatus.ANALYZED).count(),
+        "distribution": qs.exclude(recommendation="").values("recommendation").annotate(n=Count("id")),
+        "recent": qs.all()[:5],
+    }
+    return render(request, "dashboard.html", ctx)
+
+
+@login_required
+def upload(request):
+    if request.method == "POST":
+        files = [(f.name, f.read()) for f in request.FILES.getlist("files")]
+        try:
+            items = expand_uploads(files)
+        except UploadRejected as exc:
+            messages.error(request, str(exc))
+            return render(request, "upload.html", status=400)
+        dossier, report = DossierAnalysisFacade.create_from_items(
+            request.user, items, request.POST.get("required_use", "").strip(), request.POST.get("address", "").strip())
+        for m in report.messages:
+            messages.warning(request, m)
+        messages.success(request, f"Expediente {dossier.code} creado. El análisis inició automáticamente.")
+        return redirect("progress", pk=dossier.pk)
+    return render(request, "upload.html")
+
+
+@login_required
+def dossier_list(request):
+    qs = Dossier.objects.filter(specs.from_params(request.GET).q).select_related("property")
+    return render(request, "list.html", {"dossiers": qs, "statuses": DossierStatus.choices, "f": request.GET})
+
+
+@login_required
+def progress(request, pk):
+    return render(request, "progress.html", {"dossier": get_object_or_404(Dossier, pk=pk),
+                                             "runs": get_object_or_404(Dossier, pk=pk).agent_runs.all()})
+
+
+@login_required
+def progress_json(request, pk):
+    d = get_object_or_404(Dossier, pk=pk)
+    runs = [{"agent": r.agent, "status": r.status, "ms": r.duration_ms, "retries": r.retries, "error": r.error} for r in d.agent_runs.all()]
+    return JsonResponse({"status": d.status, "progress": d.progress, "stage": d.current_stage, "runs": runs})
+
+
+@login_required
+def detail(request, pk):
+    d = get_object_or_404(Dossier.objects.select_related("property"), pk=pk)
+    verdict = d.verdicts.first()
+    payload = verdict.payload if verdict else {}
+    docs = d.documents.select_related("classification")
+    fields = d.fields.filter(is_current=True, origin__in=["agent", "manual"]).select_related("document")
+    ctx = {
+        "dossier": d, "verdict": verdict, "payload": payload, "documents": docs,
+        "doc_types": [t for t in DocumentType], "fields": fields,
+        "found_fields": [f for f in fields if f.raw_value != "no encontrado"],
+        "rules": d.rule_results.all(), "discrepancies": d.discrepancies.all(), "runs": d.agent_runs.all(),
+        "warnings": payload.get("warnings", []),
+    }
+    return render(request, "detail.html", ctx)
+
+
+@require_POST
+@role_required("can_correct")
+def correct_classification(request, doc_id):
+    doc = get_object_or_404(Document, pk=doc_id)
+    doc_type = request.POST.get("doc_type", "")
+    if doc_type not in {t.value for t in DocumentType}:
+        messages.error(request, "Tipo documental inválido.")
+    else:
+        DossierAnalysisFacade.correct_classification(request.user, doc, doc_type)
+        messages.success(request, "Clasificación corregida; se re-ejecutaron las etapas afectadas.")
+    return redirect("progress", pk=doc.dossier_id)
+
+
+@require_POST
+@role_required("can_correct")
+def correct_field(request, field_id):
+    f = get_object_or_404(ExtractedField, pk=field_id, is_current=True)
+    value = request.POST.get("value", "").strip()
+    if not value:
+        messages.error(request, "El valor no puede estar vacío.")
+        return redirect("detail", pk=f.dossier_id)
+    DossierAnalysisFacade.correct_field(request.user, f, value)
+    messages.success(request, "Dato corregido (nueva versión); validaciones re-ejecutadas.")
+    return redirect("progress", pk=f.dossier_id)
+
+
+@require_POST
+@role_required("can_correct")
+def rerun(request, pk):
+    d = get_object_or_404(Dossier, pk=pk)
+    audit(request.user, "dossier.rerun", d.code)
+    DossierAnalysisFacade.start(d, "rules")
+    return redirect("progress", pk=d.pk)

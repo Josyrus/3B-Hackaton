@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% block content %}
+<h3>Progreso — {{ dossier.code }}</h3>
+<div class="progress mb-3" style="height:24px"><div id="bar" class="progress-bar" style="width:{{ dossier.progress }}%">{{ dossier.progress }}%</div></div>
+<p>Estado: <b id="status">{{ dossier.get_status_display }}</b> · Agente actual: <b id="stage">{{ dossier.current_stage }}</b></p>
+<table class="table table-sm bg-white"><thead><tr><th>Agente</th><th>Estado</th><th>ms</th><th>Reintentos</th><th>Error</th></tr></thead><tbody id="runs">
+{% for r in runs %}<tr><td>{{ r.agent }}</td><td>{{ r.status }}</td><td>{{ r.duration_ms }}</td><td>{{ r.retries }}</td><td>{{ r.error }}</td></tr>{% endfor %}</tbody></table>
+<a class="btn btn-primary" href="{% url 'detail' dossier.pk %}">Ver detalle</a>{% endblock %}
+{% block scripts %}<script>
+const url="{% url 'progress_json' dossier.pk %}";
+async function tick(){const r=await fetch(url);const d=await r.json();
+ document.getElementById('bar').style.width=d.progress+'%';document.getElementById('bar').textContent=d.progress+'%';
+ document.getElementById('status').textContent=d.status;document.getElementById('stage').textContent=d.stage;
+ const tb=document.getElementById('runs');tb.replaceChildren();
+ for(const x of d.runs){const tr=tb.insertRow();[x.agent,x.status,x.ms,x.retries,x.error].forEach(v=>{tr.insertCell().textContent=v});}
+ if(d.status==='analizado'){location.href="{% url 'detail' dossier.pk %}";return;} if(d.status!=='error') setTimeout(tick,1500);}
+{% if dossier.status != 'analizado' %}tick();{% endif %}</script>{% endblock %}

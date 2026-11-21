@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% block content %}
+<h3>Configuración</h3><p>Versión activa: <b>{{ version }}</b>. Los valores <code>null</code> son criterios pendientes de confirmación oficial.</p>
+<div class="row"><div class="col-md-8"><form method="post">{% csrf_token %}
+<textarea class="form-control font-monospace" name="yaml_text" rows="30">{{ yaml_text }}</textarea>
+<button class="btn btn-primary mt-2">Validar y guardar nueva versión</button></form></div>
+<div class="col-md-4"><h6>Reglas ({{ ruleset.rules|length }})</h6><ul class="small">{% for r in ruleset.rules %}<li>{{ r.id }} {% if r.provisional %}<span class="badge bg-warning text-dark">provisional</span>{% endif %}</li>{% endfor %}</ul>
+<h6>Versiones</h6><ul class="small">{% for v in versions %}<li>#{{ v.pk }} {{ v.version }} — {{ v.created_at|date:"d/m/Y H:i" }}</li>{% empty %}<li>Solo archivo por defecto</li>{% endfor %}</ul></div></div>{% endblock %}

@@ -1,0 +1,76 @@
+# Configuración versionada del sistema. Todo valor "provisional" está pendiente de confirmación oficial.
+# Un valor null significa "criterio pendiente": el sistema responde INDETERMINADA, nunca inventa un umbral.
+version: "0.1.0-provisional"
+
+thresholds:
+  classification_min_confidence: 0.80   # PROVISIONAL
+  verdict_min_confidence: 0.80          # PROVISIONAL
+  surface_tolerance_pct: null           # PENDIENTE de criterio oficial
+
+classification_keywords:
+  escritura: ["escritura publica", "notario", "notaria", "compraventa", "fe publica", "protocolo", "otorga"]
+  predial: ["boleta predial", "impuesto predial", "cuenta predial", "tesoreria", "valor catastral", "contribuyente"]
+  alineamiento: ["constancia de alineamiento", "alineamiento y numero oficial", "numero oficial", "alineamiento"]
+  uso_suelo: ["certificado de uso de suelo", "uso de suelo", "zonificacion", "uso del suelo", "usos permitidos"]
+
+# Esquemas documentales: campo -> etiquetas aceptadas (normalizadas sin acentos)
+schemas:
+  escritura:
+    titular: ["titular", "propietario", "adquirente", "comprador"]
+    direccion: ["direccion", "ubicacion", "domicilio del inmueble", "inmueble ubicado en"]
+    identificacion_inmueble: ["identificacion del inmueble", "lote", "folio real", "identificacion del predio"]
+    superficie_terreno: ["superficie del terreno", "superficie", "superficie de terreno"]
+    datos_relevantes: ["datos relevantes", "notario", "numero de escritura"]
+  predial:
+    propietario: ["propietario", "contribuyente", "nombre del contribuyente"]
+    direccion: ["direccion", "ubicacion", "domicilio del predio"]
+    cuenta_predial: ["cuenta predial", "clave predial", "cuenta catastral"]
+    superficie_registrada: ["superficie registrada", "superficie de terreno", "superficie"]
+  alineamiento:
+    direccion_oficial: ["direccion oficial", "direccion", "ubicacion"]
+    numero_oficial: ["numero oficial"]
+    identificacion_predio: ["identificacion del predio", "lote"]
+    alineamiento: ["alineamiento", "alineamiento determinado"]
+    fecha_emision: ["fecha de emision", "fecha de expedicion", "fecha"]
+    vigencia: ["vigencia", "vigente hasta"]
+    autoridad_emisora: ["autoridad emisora", "emite", "autoridad"]
+  uso_suelo:
+    direccion: ["direccion", "ubicacion"]
+    identificacion_inmueble: ["identificacion del inmueble", "lote"]
+    uso_autorizado: ["uso autorizado", "uso permitido", "uso de suelo"]
+    compatibilidad_uso_comercial: ["compatibilidad con el uso comercial", "compatibilidad uso comercial", "compatibilidad"]
+    restricciones: ["restricciones", "restricciones y condicionantes", "condicionantes"]
+    superficie_aplicable: ["superficie aplicable", "superficie"]
+    fecha_emision: ["fecha de emision", "fecha de expedicion", "fecha"]
+    vigencia: ["vigencia", "vigente hasta"]
+    autoridad_emisora: ["autoridad emisora", "emite", "autoridad"]
+
+rules:
+  # Presencia de campos clave: PROVISIONALES (criterio de requisitos mínimos pendiente)
+  - {id: escritura.titular.presente, doc_type: escritura, type: required_field, field: titular, provisional: true, category: requisito}
+  - {id: escritura.superficie.presente, doc_type: escritura, type: required_field, field: superficie_terreno, provisional: true, category: requisito}
+  - {id: predial.cuenta.presente, doc_type: predial, type: required_field, field: cuenta_predial, provisional: true, category: requisito}
+  - {id: predial.propietario.presente, doc_type: predial, type: required_field, field: propietario, provisional: true, category: requisito}
+  - {id: alineamiento.numero.presente, doc_type: alineamiento, type: required_field, field: numero_oficial, provisional: true, category: requisito}
+  - {id: uso_suelo.uso.presente, doc_type: uso_suelo, type: required_field, field: uso_autorizado, provisional: true, category: requisito}
+  # Vigencia: un documento cuya vigencia declarada ya pasó está vencido (hecho documental)
+  - {id: alineamiento.vigencia, doc_type: alineamiento, type: date_not_expired, field: vigencia, provisional: false, category: vigencia}
+  - {id: uso_suelo.vigencia, doc_type: uso_suelo, type: date_not_expired, field: vigencia, provisional: false, category: vigencia}
+  # Compatibilidad declarada expresamente en el documento
+  - id: uso_suelo.compatibilidad
+    doc_type: uso_suelo
+    type: enum_match
+    field: compatibilidad_uso_comercial
+    provisional: false
+    category: requisito
+    params:
+      pass: ["si", "compatible", "permitido", "cumple"]
+      fail: ["no", "incompatible", "no compatible", "prohibido", "no permitido"]
+  # Restricciones: se reportan para revisión (no hay criterio oficial para calificarlas)
+  - {id: uso_suelo.restricciones.informadas, doc_type: uso_suelo, type: report_if_present, field: restricciones, provisional: true, category: restriccion}
+
+cross_checks:
+  - {field: direccion, kind: address, sources: [{doc_type: escritura, field: direccion}, {doc_type: predial, field: direccion}, {doc_type: alineamiento, field: direccion_oficial}, {doc_type: uso_suelo, field: direccion}]}
+  - {field: propietario, kind: name, sources: [{doc_type: escritura, field: titular}, {doc_type: predial, field: propietario}]}
+  - {field: superficie, kind: area, sources: [{doc_type: escritura, field: superficie_terreno}, {doc_type: predial, field: superficie_registrada}, {doc_type: uso_suelo, field: superficie_aplicable}]}
+  - {field: identificacion_predio, kind: identifier, sources: [{doc_type: escritura, field: identificacion_inmueble}, {doc_type: alineamiento, field: identificacion_predio}, {doc_type: uso_suelo, field: identificacion_inmueble}]}

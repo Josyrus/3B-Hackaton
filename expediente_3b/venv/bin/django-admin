@@ -1,0 +1,8 @@
+#!/bin/sh
+'''exec' "/home/karla/Documents/5to semestre/3B/3B-Hackaton/expediente_3b/venv/bin/python" "$0" "$@"
+' '''
+import sys
+from django.core.management import execute_from_command_line
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(execute_from_command_line())

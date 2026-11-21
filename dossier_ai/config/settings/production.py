@@ -1,0 +1,7 @@
+from .base import *  # noqa: F401,F403
+
+DEBUG = False
+SECRET_KEY = env("DJANGO_SECRET_KEY")  # noqa: F405 - obligatoria
+SECURE_SSL_REDIRECT = True
+SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = True
+SECURE_HSTS_SECONDS = 31536000

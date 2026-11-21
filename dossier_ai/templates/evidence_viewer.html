@@ -1,0 +1,4 @@
+{% extends "base.html" %}{% block content %}
+<h5>{{ doc.original_name }} — página {{ page }}</h5>
+{% if quote %}<div class="quote mb-2">{{ quote }}</div>{% endif %}
+<iframe src="{% url 'pdf_file' doc.pk %}#page={{ page }}" style="width:100%;height:80vh;border:1px solid #ccc"></iframe>{% endblock %}

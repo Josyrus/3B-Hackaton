@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block content %}
+<h3>Resumen general</h3>
+<div class="row g-3 my-2">
+<div class="col-md-4"><div class="card"><div class="card-body"><div class="text-muted">Expedientes</div><div class="display-6">{{ total }}</div></div></div></div>
+<div class="col-md-4"><div class="card"><div class="card-body"><div class="text-muted">Pendientes</div><div class="display-6">{{ pending }}</div></div></div></div>
+<div class="col-md-4"><div class="card"><div class="card-body"><div class="text-muted">Analizados</div><div class="display-6">{{ analyzed }}</div></div></div></div></div>
+<h5 class="mt-4">Distribución de recomendaciones</h5>
+<ul class="list-group mb-4">{% for d in distribution %}<li class="list-group-item d-flex justify-content-between">{{ d.recommendation }}<span class="badge bg-secondary">{{ d.n }}</span></li>{% empty %}<li class="list-group-item text-muted">Sin dictámenes aún.</li>{% endfor %}</ul>
+<h5>Recientes</h5>{% include "_table.html" with dossiers=recent %}{% endblock %}

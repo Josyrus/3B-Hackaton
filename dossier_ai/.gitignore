@@ -1,0 +1,4 @@
+private_storage/
+db.sqlite3
+.env
+__pycache__/

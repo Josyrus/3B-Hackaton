@@ -1,0 +1,4 @@
+<table class="table table-sm bg-white"><thead><tr><th>Identificador</th><th>Creado</th><th>Estado</th><th>Recomendación</th><th>Confianza</th></tr></thead><tbody>
+{% for d in dossiers %}<tr><td><a href="{% url 'detail' d.pk %}">{{ d.code }}</a></td><td>{{ d.created_at|date:"d/m/Y H:i" }}</td><td>{{ d.get_status_display }}{% if d.status == 'procesando' %} <a href="{% url 'progress' d.pk %}">(ver progreso)</a>{% endif %}</td>
+<td>{% if d.recommendation %}<span class="badge badge-{{ d.recommendation }}">{{ d.recommendation }}</span>{% else %}—{% endif %}</td><td>{{ d.confidence|default:"—" }}</td></tr>
+{% empty %}<tr><td colspan="5" class="text-muted">Sin expedientes.</td></tr>{% endfor %}</tbody></table>

@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block content %}
+<h3>Expedientes</h3>
+<form class="row g-2 mb-3" method="get">
+<div class="col-auto"><input type="date" class="form-control" name="from" value="{{ f.from }}"></div>
+<div class="col-auto"><input type="date" class="form-control" name="to" value="{{ f.to }}"></div>
+<div class="col-auto"><select class="form-select" name="status"><option value="">Estado</option>{% for v,l in statuses %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+<div class="col-auto"><select class="form-select" name="recommendation"><option value="">Recomendación</option><option value="cumple">Cumple</option><option value="requiere_revision">Requiere revisión</option><option value="no_cumple">No cumple</option></select></div>
+<div class="col-auto"><button class="btn btn-secondary">Filtrar</button></div></form>
+{% include "_table.html" %}{% endblock %}
