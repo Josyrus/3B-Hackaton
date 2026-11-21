@@ -153,22 +153,41 @@ class BaseExtractor:
 
 
 class LabelExtractor(BaseExtractor):
-    """Extractor determinista local basado en etiquetas 'Campo: valor' del esquema."""
+    """Extractor determinista local basado en las etiquetas del esquema. Reconoce tres formas:
+    'Campo: valor', 'Campo' + valor en la línea siguiente, y 'Campo valor' (etiquetas de 2+ palabras)."""
     _LINE = re.compile(r"^\s*(.+?)\s*[:：]\s*(\S.*)$")
 
     def candidates(self, doc):
         labels = {n: {nz.normalize_text(label) for label in ls} for n, ls in self.schema.items()}
         found: dict[str, tuple[str, int, str]] = {}
         for page in doc.pages:
-            for line in page.text.splitlines():
-                m = self._LINE.match(line)
-                if not m:
-                    continue
-                label = nz.normalize_text(m[1])
-                for name, accepted in labels.items():
-                    if name not in found and label in accepted:
-                        found[name] = (m[2], page.page, line.strip())
+            lines = [ln for ln in page.text.splitlines() if ln.strip()]
+            for i, line in enumerate(lines):
+                hit = self._match(line, lines[i + 1] if i + 1 < len(lines) else "", labels)
+                for name, raw, quote in hit:
+                    found.setdefault(name, (raw, page.page, quote))
         return found, []
+
+    def _match(self, line: str, nxt: str, labels: dict[str, set[str]]) -> list[tuple[str, str, str]]:
+        m = self._LINE.match(line)
+        if m:  # 'Campo: valor'
+            label = nz.normalize_text(m[1])
+            return [(n, m[2], line.strip()) for n, acc in labels.items() if label in acc]
+        norm = nz.normalize_text(line).rstrip(" :")
+        out = []
+        for name, acc in labels.items():
+            if norm in acc and nxt.strip() and not self._LINE.match(nxt):  # etiqueta sola + valor debajo
+                out.append((name, nxt.strip(), f"{line.strip()} {nxt.strip()}"))
+                continue
+            for label in sorted(acc, key=len, reverse=True):  # 'Campo valor' (solo etiquetas de 2+ palabras)
+                if " " in label and norm.startswith(label + " "):
+                    start = len(line) - len(line.lstrip())
+                    words = len(label.split())
+                    raw = " ".join(line.split()[words:])
+                    if raw:
+                        out.append((name, raw, line.strip()))
+                    break
+        return out
 
 
 class LLMExtractionItem(BaseModel):

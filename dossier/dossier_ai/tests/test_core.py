@@ -184,3 +184,12 @@ def test_new_rule_without_code_changes():
 def test_reproducible():
     a, b = run(full_inputs()), run(full_inputs())
     assert a.verdict == b.verdict
+
+
+def test_extractor_value_on_next_line_and_inline_label():
+    text = "Constancia de alineamiento y número oficial\nNÚMERO OFICIAL\n245-B\nDIRECCIÓN OFICIAL Calle Hidalgo 12 Col. Centro\nVIGENCIA\n01/02/2027"
+    s = run([doc_input(1, text)])
+    f = {x.name: x for x in s.fields if x.found}
+    assert f["numero_oficial"].raw == "245-B" and f["direccion_oficial"].raw.startswith("Calle Hidalgo")
+    assert f["vigencia"].raw == "01/02/2027"
+    assert all(x.evidence.verification == Verification.VERIFIED for x in f.values())

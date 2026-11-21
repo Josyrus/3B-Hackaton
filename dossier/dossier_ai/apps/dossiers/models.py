@@ -1,3 +1,5 @@
+import builtins
+
 from django.conf import settings
 from django.db import models
 
@@ -39,6 +41,10 @@ class Dossier(models.Model):
                 n += 1
                 self.code = f"EXP-{timezone.now():%Y}-{n:05d}"
         super().save(*args, **kwargs)
+
+    @builtins.property
+    def get_recommendation_label(self) -> str:
+        return {"cumple": "Cumple", "requiere_revision": "Requiere revisión", "no_cumple": "No cumple"}.get(self.recommendation, "")
 
     def __str__(self) -> str:
         return self.code

@@ -1,9 +1,0 @@
-{% extends "base.html" %}{% block content %}
-<h3>Cargar expediente</h3>
-<form method="post" enctype="multipart/form-data" class="card card-body">{% csrf_token %}
-<div class="mb-3"><label class="form-label">PDF (selección múltiple) o ZIP con PDF</label>
-<input class="form-control" type="file" name="files" multiple accept=".pdf,.zip,application/pdf,application/zip" required></div>
-<div class="mb-3"><label class="form-label">Uso comercial requerido</label><input class="form-control" name="required_use" placeholder="Ej. Restaurante"></div>
-<div class="mb-3"><label class="form-label">Dirección del inmueble (opcional)</label><input class="form-control" name="address"></div>
-<p class="text-muted small">Los documentos se procesan localmente y se almacenan de forma privada. El análisis inicia automáticamente tras una carga válida.</p>
-<button class="btn btn-primary">Crear expediente y analizar</button></form>{% endblock %}

@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block content %}
 <div class="d-flex justify-content-between align-items-center"><h3>{{ dossier.code }}</h3>
 <div>{% if verdict %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'pdf' %}">PDF</a> <a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'json' %}">JSON</a>{% endif %}
-{% if user.can_correct %}<form class="d-inline" method="post" action="{% url 'rerun' dossier.pk %}">{% csrf_token %}<button class="btn btn-sm btn-primary">Re-ejecutar validaciones</button></form>{% endif %}</div></div>
+{% if user.can_correct %}<form class="d-inline" method="post" action="{% url 'rerun' dossier.pk %}">{% csrf_token %}<button class="btn btn-sm btn-accent">Re-ejecutar validaciones</button></form>{% endif %}</div></div>
 <ul class="nav nav-tabs my-3" role="tablist">
 <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#t1">Resumen y dictamen</a></li>
 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t2">Documentos</a></li>
@@ -13,7 +13,7 @@
 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t8">Bitácora</a></li></ul>
 <div class="tab-content">
 <div class="tab-pane fade show active" id="t1">{% if verdict %}
-<div class="card card-body mb-3"><h4>Recomendación inicial: <span class="badge badge-{{ verdict.recommendation }}">{{ verdict.recommendation }}</span></h4>
+<div class="panel panel-pad mb-3"><h4>Recomendación inicial: <span class="badge badge-{{ verdict.recommendation }}">{{ dossier.get_recommendation_label }}</span></h4>
 <p>Nivel de confianza global: <b>{{ verdict.confidence }}</b></p><p class="text-muted small">{{ payload.disclaimer }}</p>
 <h6>Justificación</h6><ul>{% for j in payload.justification %}<li>{{ j }}</li>{% endfor %}</ul>
 <h6>Requisitos cumplidos</h6><p>{{ payload.satisfied|join:", "|default:"—" }}</p><h6>Requisitos incumplidos</h6><p>{{ payload.unmet|join:", "|default:"—" }}</p>
@@ -32,7 +32,7 @@
 <td>{% if user.can_correct and f.raw_value != 'no encontrado' or user.can_correct and f.origin == 'agent' %}<form method="post" action="{% url 'correct_field' f.pk %}" class="d-flex gap-1">{% csrf_token %}<input name="value" class="form-control form-control-sm" placeholder="Corregir"><button class="btn btn-sm btn-outline-primary">OK</button></form>{% endif %}</td></tr>{% endfor %}</table></div>
 <div class="tab-pane fade" id="t5"><table class="table table-sm bg-white"><tr><th>Regla</th><th>Resultado</th><th>Categoría</th><th>Detalle</th></tr>
 {% for r in rules %}<tr><td>{{ r.rule_id }}{% if r.provisional %} <span class="badge bg-warning text-dark">provisional</span>{% endif %}</td><td>{{ r.outcome }}</td><td>{{ r.category }}</td><td>{{ r.message }}</td></tr>{% endfor %}</table></div>
-<div class="tab-pane fade" id="t6">{% for d in discrepancies %}<div class="card mb-2"><div class="card-body"><b>{{ d.field }}</b> — {{ d.kind }}{% if d.kind == 'formato' %} (solo diferencia de formato){% endif %}<ul class="mb-0">{% for v in d.values %}<li>{{ v.doc_type }}: «{{ v.raw }}» <a href="{% url 'evidence_viewer' v.evidence.document_id %}?page={{ v.evidence.page }}">p. {{ v.evidence.page }}</a></li>{% endfor %}</ul></div></div>{% empty %}<p class="text-muted">Sin inconsistencias.</p>{% endfor %}</div>
+<div class="tab-pane fade" id="t6">{% for d in discrepancies %}<div class="panel mb-2"><div class="p-3"><b>{{ d.field }}</b> — {{ d.kind }}{% if d.kind == 'formato' %} (solo diferencia de formato){% endif %}<ul class="mb-0">{% for v in d.values %}<li>{{ v.doc_type }}: «{{ v.raw }}» <a href="{% url 'evidence_viewer' v.evidence.document_id %}?page={{ v.evidence.page }}">p. {{ v.evidence.page }}</a></li>{% endfor %}</ul></div></div>{% empty %}<p class="text-muted">Sin inconsistencias.</p>{% endfor %}</div>
 <div class="tab-pane fade" id="t7">{% for f in found_fields %}<div class="mb-3"><b>{{ f.doc_type }}.{{ f.name }}</b> — {{ f.verification }}<div class="quote">{{ f.quote }}</div><a href="{% url 'evidence_viewer' f.document_id %}?page={{ f.page|default:1 }}">Abrir PDF en p. {{ f.page }}</a></div>{% endfor %}</div>
 <div class="tab-pane fade" id="t8"><table class="table table-sm bg-white"><tr><th>Agente</th><th>Estado</th><th>ms</th><th>Reintentos</th><th>Config</th><th>Error</th></tr>
 {% for r in runs %}<tr><td>{{ r.agent }}</td><td>{{ r.status }}</td><td>{{ r.duration_ms }}</td><td>{{ r.retries }}</td><td>{{ r.ruleset_version }}</td><td>{{ r.error }}</td></tr>{% endfor %}</table></div>

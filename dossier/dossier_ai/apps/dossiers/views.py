@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count
@@ -16,35 +17,49 @@ from .models import Dossier, DossierStatus
 from .services import DossierAnalysisFacade
 
 
-@login_required
-def dashboard(request):
+def _home_context() -> dict:
     qs = Dossier.objects
-    ctx = {
-        "total": qs.count(),
+    total = qs.count()
+    labels = {"cumple": "Cumple", "requiere_revision": "Requiere revisión", "no_cumple": "No cumple"}
+    counts = {r["recommendation"]: r["n"] for r in qs.exclude(recommendation="").values("recommendation").annotate(n=Count("id"))}
+    judged = sum(counts.values())
+    return {
+        "total": total,
         "pending": qs.exclude(status=DossierStatus.ANALYZED).count(),
         "analyzed": qs.filter(status=DossierStatus.ANALYZED).count(),
-        "distribution": qs.exclude(recommendation="").values("recommendation").annotate(n=Count("id")),
-        "recent": qs.all()[:5],
+        "distribution": [{"key": k, "label": v, "n": counts.get(k, 0),
+                          "pct": round(100 * counts.get(k, 0) / judged) if judged else 0} for k, v in labels.items()],
+        "judged": judged,
+        "recent": qs.select_related("property")[:6],
+        "max_mb": settings.MAX_UPLOAD_MB,
     }
-    return render(request, "dashboard.html", ctx)
 
 
 @login_required
-def upload(request):
+def dashboard(request):
+    """Inicio: carga de documentos (acción principal) y resumen."""
     if request.method == "POST":
         files = [(f.name, f.read()) for f in request.FILES.getlist("files")]
         try:
             items = expand_uploads(files)
         except UploadRejected as exc:
             messages.error(request, str(exc))
-            return render(request, "upload.html", status=400)
+            return render(request, "dashboard.html", _home_context(), status=400)
         dossier, report = DossierAnalysisFacade.create_from_items(
-            request.user, items, request.POST.get("required_use", "").strip(), request.POST.get("address", "").strip())
+            request.user, items, address=request.POST.get("address", "").strip())
         for m in report.messages:
             messages.warning(request, m)
         messages.success(request, f"Expediente {dossier.code} creado. El análisis inició automáticamente.")
         return redirect("progress", pk=dossier.pk)
-    return render(request, "upload.html")
+    return render(request, "dashboard.html", _home_context())
+
+
+@login_required
+def upload(request):
+    """Ruta histórica: la carga ahora vive en el inicio."""
+    if request.method == "POST":
+        return dashboard(request)
+    return redirect("dashboard")
 
 
 @login_required

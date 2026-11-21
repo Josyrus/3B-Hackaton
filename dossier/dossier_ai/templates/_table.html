@@ -1,0 +1,6 @@
+<table class="table align-middle mb-0"><thead><tr><th>Expediente</th><th>Creado</th><th>Estado</th><th>Recomendación</th><th class="text-end">Confianza</th></tr></thead><tbody>
+{% for d in dossiers %}<tr><td><a class="fw-semibold" href="{% url 'detail' d.pk %}">{{ d.code }}</a></td><td>{{ d.created_at|date:"d/m/Y H:i" }}</td>
+<td>{{ d.get_status_display }}{% if d.status == 'procesando' %} <a class="small" href="{% url 'progress' d.pk %}">ver progreso</a>{% endif %}</td>
+<td>{% if d.recommendation %}<span class="chip chip-{{ d.recommendation }}">{{ d.get_recommendation_label }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+<td class="text-end">{% if d.confidence is not None %}{{ d.confidence }}{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="5" class="text-muted py-4">Todavía no hay expedientes. Suba documentos arriba para crear el primero.</td></tr>{% endfor %}</tbody></table>

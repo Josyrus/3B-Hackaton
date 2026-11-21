@@ -36,7 +36,7 @@ def up(name, data): return SimpleUploadedFile(name, data, content_type="applicat
 
 
 def post_files(client, files, **extra):
-    return client.post(reverse("upload"), {"files": files, "required_use": "Restaurante", **extra})
+    return client.post(reverse("upload"), {"files": files, **extra})
 
 
 def full_upload(client):
@@ -208,3 +208,21 @@ def test_evidence_viewer_page(client, analyst):
 def test_sensitive_text_not_in_audit(client, analyst):
     full_upload(client)
     assert not any("Juan" in (a.detail + a.object_ref) for a in AuditLog.objects.all())
+
+
+def test_home_has_upload_and_no_commercial_use_field(client, analyst):
+    r = client.get(reverse("dashboard"))
+    assert b'name="files"' in r.content and b"required_use" not in r.content and "Uso comercial".encode() not in r.content
+    assert client.get(reverse("upload")).status_code == 302  # ruta histórica redirige al inicio
+
+def test_home_upload_error_rerenders_home(client, analyst):
+    r = client.post(reverse("dashboard"), {"files": [up("x.exe", b"MZ")]})
+    assert r.status_code == 400 and b"Formato no permitido" in r.content and b'name="files"' in r.content
+
+
+def test_inspect_pdf_command(tmp_path, capsys):
+    from django.core.management import call_command
+    p = tmp_path / "a.pdf"; p.write_bytes(make_pdf(DOCS["predial"]))
+    call_command("inspect_pdf", str(p))
+    out = capsys.readouterr().out
+    assert "Clasificación: predial" in out and "predial.cuenta_predial" in out
