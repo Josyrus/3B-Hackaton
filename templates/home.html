@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Bienvenido, {{ user.get_username }}</h1>
+  <p class="muted">Roles: {% if roles %}{{ roles|join:", " }}{% else %}sin rol asignado{% endif %}</p>
+  <p class="muted">El panel de expedientes estará disponible en una fase posterior.</p>
+</div>
+{% endblock %}
