@@ -1,0 +1,13 @@
+\babel@toc {spanish}{}\relax 
+\contentsline {section}{\numberline {1}Estructura del equipo y asignación de roles}{1}{section.1}%
+\contentsline {section}{\numberline {2}Descripción del proyecto}{2}{section.2}%
+\contentsline {section}{\numberline {3}Formalización de los requerimientos funcionales}{3}{section.3}%
+\contentsline {section}{\numberline {4}Especificaciones de los requerimientos funcionales}{6}{section.4}%
+\contentsline {section}{\numberline {5}Formalización de los requerimientos no funcionales}{9}{section.5}%
+\contentsline {section}{\numberline {6}Reglas de negocio}{10}{section.6}%
+\contentsline {section}{\numberline {7}Historias de usuario}{11}{section.7}%
+\contentsline {section}{\numberline {8}Actores y casos de uso}{12}{section.8}%
+\contentsline {section}{\numberline {9}Arquitectura multiagente}{13}{section.9}%
+\contentsline {section}{\numberline {10}Patrones arquitectónicos y de diseño}{14}{section.10}%
+\contentsline {section}{\numberline {11}Mapa de navegación}{15}{section.11}%
+\contentsline {section}{\numberline {12}Aplicación del ciclo de vida del software en el proyecto}{15}{section.12}%
