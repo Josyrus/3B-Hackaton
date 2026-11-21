@@ -1,7 +1,8 @@
-{% extends "base.html" %}{% block content %}
+{% extends "base.html" %}{% block title %}Inicio — Analizar un expediente{% endblock %}{% block content %}
 <style>
-.drop{border:2px dashed #9fb2bf;border-radius:8px;background:var(--card);padding:2.5rem 1.5rem;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+.drop{border:2px dashed #9fb2bf;border-radius:8px;background:var(--card);padding:2rem 1.5rem;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
 .drop:hover,.drop.over{border-color:var(--accent);background:#eef7f6}
+.drop:focus-within{outline:3px solid #7cc4bb;outline-offset:2px}
 .drop-title{font-family:var(--serif);font-size:1.6rem;margin-bottom:.25rem}
 .files{list-style:none;margin:1rem 0 0;padding:0;text-align:left}
 .files li{display:flex;justify-content:space-between;gap:1rem;padding:.45rem .2rem;border-bottom:1px solid var(--line);font-size:.95rem}
@@ -12,45 +13,67 @@
 .stat{display:flex;justify-content:space-between;align-items:baseline;padding:.55rem 0;border-bottom:1px solid var(--line)}
 .stat b{font-family:var(--serif);font-size:1.4rem}
 </style>
+<h1 class="h2 mb-1">Analizar un expediente</h1>
+<p class="text-muted mb-3">Tres pasos, sin capacitación: suba los PDF, el sistema los clasifica y valida solo, y usted revisa el dictamen con su evidencia.</p>
+<ol class="steps" aria-label="Pasos del análisis">
+  <li class="current"><span class="n" aria-hidden="true">1</span>Subir documentos</li>
+  <li><span class="n" aria-hidden="true">2</span>Análisis automático</li>
+  <li><span class="n" aria-hidden="true">3</span>Revisar el dictamen</li>
+</ol>
 <div class="row g-4">
   <div class="col-lg-8">
-    <h2 class="mb-1">Analizar un expediente</h2>
-    <p class="text-muted mb-3">Suba los documentos del inmueble: escrituras, predial, alineamiento y número oficial, y uso de suelo. El análisis comienza al cargarlos.</p>
-    <form method="post" enctype="multipart/form-data" id="upload-form" novalidate>{% csrf_token %}
-      <label class="drop d-block w-100" id="drop" for="file-input">
-        <div class="drop-title">Arrastre aquí sus archivos</div>
-        <div class="text-muted">o haga clic para elegirlos. PDF o un ZIP con PDF, hasta {{ max_mb }} MB cada uno.</div>
-      </label>
-      <input type="file" id="file-input" name="files" multiple accept=".pdf,.zip,application/pdf,application/zip" class="visually-hidden">
-      <ul class="files" id="file-list" aria-live="polite"></ul>
-      <p class="text-danger small mb-0" id="file-error" role="alert"></p>
-      <div class="d-flex align-items-center gap-3 mt-3">
-        <button class="btn btn-accent btn-lg" id="submit" disabled>Crear expediente y analizar</button>
-        <span class="text-muted small">Los documentos se procesan en este equipo y se guardan de forma privada.</span>
-      </div>
-    </form>
+    <div class="panel panel-pad">
+      <h2 class="h5 mb-1">Paso 1 — Suba los documentos del inmueble</h2>
+      <p class="text-muted small mb-3">Se necesitan 4 tipos. Si falta alguno, el dictamen lo señalará como faltante en lugar de descartar el expediente.</p>
+      <ul class="checklist" id="type-checklist" aria-label="Tipos documentales requeridos">
+        <li data-key="escritura" data-words="escritura,escrituras"><span class="mark no" aria-hidden="true">–</span><span><b>Escrituras</b><small>El documento que acredita la propiedad.</small></span></li>
+        <li data-key="predial" data-words="predial"><span class="mark no" aria-hidden="true">–</span><span><b>Predial</b><small>El recibo o constancia del impuesto predial.</small></span></li>
+        <li data-key="alineamiento" data-words="alineamiento,numero,oficial"><span class="mark no" aria-hidden="true">–</span><span><b>Alineamiento y número oficial</b><small>La constancia oficial de alineamiento y número.</small></span></li>
+        <li data-key="uso_suelo" data-words="uso,suelo"><span class="mark no" aria-hidden="true">–</span><span><b>Uso de suelo</b><small>El documento que autoriza el uso del inmueble.</small></span></li>
+      </ul>
+      <p class="text-muted small mt-2 mb-0" id="checklist-note">La marca se deduce solo del nombre del archivo y se confirma en el análisis. Un ZIP con los 4 PDF también vale.</p>
+      <form method="post" enctype="multipart/form-data" id="upload-form" class="mt-3" novalidate>{% csrf_token %}
+        <label class="drop d-block w-100" id="drop" for="file-input">
+          <div class="drop-title">Arrastre aquí sus archivos</div>
+          <div class="text-muted">o haga clic para elegirlos. PDF o un ZIP con PDF, hasta {{ max_mb }} MB cada uno.</div>
+        </label>
+        <input type="file" id="file-input" name="files" multiple accept=".pdf,.zip,application/pdf,application/zip" class="visually-hidden">
+        <p class="small mt-2 mb-0" id="file-count" aria-live="polite">Aún no ha elegido archivos.</p>
+        <ul class="files" id="file-list" aria-live="polite"></ul>
+        <p class="text-danger small mb-0" id="file-error" role="alert"></p>
+        <div class="d-flex align-items-center gap-3 mt-3 flex-wrap">
+          <button class="btn btn-accent btn-lg" id="submit" disabled>Crear expediente y analizar</button>
+          <span class="text-muted small" id="submit-hint">Elija al menos un archivo para continuar.</span>
+        </div>
+        <p class="text-muted small mt-2 mb-0">Los documentos se procesan en este equipo y se guardan de forma privada. El análisis comienza solo al cargarlos.</p>
+      </form>
+    </div>
   </div>
   <div class="col-lg-4">
     <div class="panel panel-pad">
-      <h5 class="mb-2">Resumen</h5>
+      <h2 class="h5 mb-2">Resumen</h2>
       <div class="stat"><span>Expedientes</span><b>{{ total }}</b></div>
-      <div class="stat"><span>Pendientes</span><b>{{ pending }}</b></div>
+      <div class="stat"><span>Pendientes de análisis</span><b>{{ pending }}</b></div>
       <div class="stat"><span>Analizados</span><b>{{ analyzed }}</b></div>
-      <h6 class="mt-3 mb-2">Recomendaciones emitidas</h6>
+      <h3 class="h6 mt-3 mb-2">Recomendaciones emitidas</h3>
       {% if judged %}
       <div class="rec-bar" role="img" aria-label="Distribución de recomendaciones">{% for d in distribution %}{% if d.n %}<i class="k-{{ d.key }}" style="width:{{ d.pct }}%"></i>{% endif %}{% endfor %}</div>
-      <ul class="list-unstyled small mt-2 mb-0">{% for d in distribution %}<li class="d-flex justify-content-between"><span><span class="chip chip-{{ d.key }}">{{ d.label }}</span></span><span>{{ d.n }}</span></li>{% endfor %}</ul>
+      <ul class="list-unstyled small mt-2 mb-0">{% for d in distribution %}<li class="d-flex justify-content-between"><span><span class="chip chip-{{ d.key }}">{% if d.key == 'cumple' %}✓ {% elif d.key == 'no_cumple' %}✕ {% else %}! {% endif %}{{ d.label }}</span></span><span>{{ d.n }}</span></li>{% endfor %}</ul>
       {% else %}<p class="text-muted small mb-0">Aún no hay dictámenes. Cargue su primer expediente.</p>{% endif %}
+      <h3 class="h6 mt-4 mb-2">¿Qué pasa después?</h3>
+      <ol class="small mb-0 ps-3"><li>El sistema clasifica cada PDF y detecta los faltantes.</li><li>Extrae los datos con su evidencia (documento y página).</li><li>Le muestra qué hacer primero: faltantes, inconsistencias o requisitos incumplidos.</li></ol>
     </div>
   </div>
 </div>
-<div class="d-flex justify-content-between align-items-baseline mt-5 mb-2"><h4 class="mb-0">Expedientes recientes</h4><a href="{% url 'list' %}">Ver todos</a></div>
+<div class="d-flex justify-content-between align-items-baseline mt-5 mb-2"><h2 class="h4 mb-0">Expedientes recientes</h2><a href="{% url 'list' %}">Ver todos</a></div>
 <div class="panel px-3 pt-2">{% include "_table.html" with dossiers=recent %}</div>
 {% endblock %}
 {% block scripts %}<script>
 (function(){
   const input=document.getElementById('file-input'),drop=document.getElementById('drop'),list=document.getElementById('file-list'),
-        err=document.getElementById('file-error'),btn=document.getElementById('submit'),form=document.getElementById('upload-form');
+        err=document.getElementById('file-error'),btn=document.getElementById('submit'),form=document.getElementById('upload-form'),
+        count=document.getElementById('file-count'),hint=document.getElementById('submit-hint'),
+        items=Array.from(document.querySelectorAll('#type-checklist li'));
   const MAX={{ max_mb }}*1024*1024;let files=[];
   const fmt=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';
   const ok=f=>/\.(pdf|zip)$/i.test(f.name);
@@ -63,6 +86,19 @@
       const rm=document.createElement('button');rm.type='button';rm.className='btn btn-link btn-sm p-0 ms-2';rm.textContent='Quitar';
       rm.onclick=()=>{files.splice(i,1);sync();render();};right.appendChild(rm);li.append(name,right);list.appendChild(li);});
     btn.disabled=files.length===0;
+    count.textContent=files.length===0?'Aún no ha elegido archivos.':files.length===1?'1 archivo listo.':' '+files.length+' archivos listos.';
+    hint.textContent=files.length===0?'Elija al menos un archivo para continuar.':'Listo: se creará el expediente y empezará el análisis.';
+    items.forEach(li=>{
+      const words=li.dataset.words.split(',');
+      const found=files.some(f=>words.some(w=>f.name.toLowerCase().includes(w)));
+      const zip=files.some(f=>/\.zip$/i.test(f.name));
+      const small=li.querySelector('small');
+      if(!li.dataset.hint){li.dataset.hint=small.textContent;}
+      const mark=li.querySelector('.mark');
+      if(found){mark.className='mark yes';mark.textContent='✓';li.querySelector('small').textContent='Detectado por el nombre del archivo; se confirma en el análisis.';}
+      else if(zip){mark.className='mark maybe';mark.textContent='?';li.querySelector('small').textContent='Puede venir dentro del ZIP; se confirma en el análisis.';}
+      else{mark.className='mark no';mark.textContent='–';small.textContent=li.dataset.hint;}
+    });
   }
   function add(newFiles){
     const bad=[];
@@ -73,10 +109,11 @@
     }
     err.textContent=bad.join(' ');sync();render();
   }
-  input.addEventListener('change',()=>{const picked=Array.from(input.files);files=files.filter(()=>true);input.value='';add(picked);});
+  input.addEventListener('change',()=>{const picked=Array.from(input.files);input.value='';add(picked);});
   ['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over');}));
   ['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('over');}));
   drop.addEventListener('drop',ev=>add(Array.from(ev.dataTransfer.files)));
   form.addEventListener('submit',()=>{btn.disabled=true;btn.textContent='Subiendo y analizando…';});
+  render();
 })();
 </script>{% endblock %}

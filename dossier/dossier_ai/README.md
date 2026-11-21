@@ -23,6 +23,14 @@ pytest            # 57 pruebas (núcleo, agentes, seguridad, API, exportación)
 ruff check .
 ```
 
+## Interfaz (rediseño intuitivo, solo plantillas)
+El cambio toca únicamente `templates/`; no se modificó ningún `views.py`, modelo, URL ni regla de negocio, así que el flujo y las pruebas existentes siguen iguales.
+- **Inicio:** indicador de 3 pasos (Subir → Analizar → Revisar dictamen) y lista de verificación de los 4 tipos documentales. Al elegir archivos, la lista marca qué tipos parecen estar por el nombre del archivo (se confirma en el análisis; un ZIP vale igual) y el botón explica por qué está desactivado hasta elegir al menos un archivo.
+- **Detalle del expediente:** se eliminaron las 8 pestañas que escondían el contenido. Ahora es una sola página en orden de trabajo: dictamen grande con confianza en Alta/Media/Baja, **Qué hacer ahora** (faltantes → inconsistencias → incumplidos), documentos recibidos y faltantes en una lista, hallazgos prioritarios primero, datos extraídos agrupados por documento y plegables, reglas, evidencia y, al final, la bitácora de agentes.
+- **Lista:** filtros con etiqueta, la recomendación elegida ya no se pierde al filtrar (antes no se conservaba), botón para limpiar filtros y conteo de resultados.
+- **Progreso:** mismos datos, pero con el indicador de pasos, barra con `role="progressbar"` y explicación en lenguaje claro de lo que hace el sistema.
+- **Accesibilidad:** enlace para saltar al contenido, menú que colapsa en móvil, `aria-current` en la navegación, etiquetas en todos los formularios y filtros, y los estados ya no dependen solo del color: cada recomendación lleva icono y texto (✓ Cumple, ! Requiere revisión, ✕ No cumple).
+
 ## Arquitectura
 ```
 Presentación  apps/*/views.py, templates/, DRF (apps/dossiers/api.py)

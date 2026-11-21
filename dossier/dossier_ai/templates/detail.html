@@ -1,39 +1,127 @@
-{% extends "base.html" %}{% block content %}
-<div class="d-flex justify-content-between align-items-center"><h3>{{ dossier.code }}</h3>
-<div>{% if verdict %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'pdf' %}">PDF</a> <a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'json' %}">JSON</a>{% endif %}
-{% if user.can_correct %}<form class="d-inline" method="post" action="{% url 'rerun' dossier.pk %}">{% csrf_token %}<button class="btn btn-sm btn-accent">Re-ejecutar validaciones</button></form>{% endif %}</div></div>
-<ul class="nav nav-tabs my-3" role="tablist">
-<li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#t1">Resumen y dictamen</a></li>
-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t2">Documentos</a></li>
-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t3">Clasificación</a></li>
-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t4">Información extraída</a></li>
-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t5">Reglas</a></li>
-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t6">Inconsistencias</a></li>
-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t7">Evidencia</a></li>
-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t8">Bitácora</a></li></ul>
-<div class="tab-content">
-<div class="tab-pane fade show active" id="t1">{% if verdict %}
-<div class="panel panel-pad mb-3"><h4>Recomendación inicial: <span class="badge badge-{{ verdict.recommendation }}">{{ dossier.get_recommendation_label }}</span></h4>
-<p>Nivel de confianza global: <b>{{ verdict.confidence }}</b></p><p class="text-muted small">{{ payload.disclaimer }}</p>
-<h6>Justificación</h6><ul>{% for j in payload.justification %}<li>{{ j }}</li>{% endfor %}</ul>
-<h6>Requisitos cumplidos</h6><p>{{ payload.satisfied|join:", "|default:"—" }}</p><h6>Requisitos incumplidos</h6><p>{{ payload.unmet|join:", "|default:"—" }}</p>
-<h6>Documentos faltantes</h6><p>{{ payload.missing_documents|join:", "|default:"—" }}</p><h6>Inconsistencias</h6><ul>{% for i in payload.inconsistencies %}<li>{{ i }}</li>{% empty %}<li>—</li>{% endfor %}</ul></div>
-{% for w in warnings %}<div class="alert alert-warning py-1">{{ w }}</div>{% endfor %}
-{% else %}<div class="alert alert-info">Aún sin dictamen. <a href="{% url 'progress' dossier.pk %}">Ver progreso</a></div>{% endif %}</div>
-<div class="tab-pane fade" id="t2"><table class="table table-sm bg-white"><tr><th>Archivo</th><th>Estado</th><th>Páginas</th><th></th></tr>
-{% for d in documents %}<tr><td>{{ d.original_name }}</td><td>{{ d.get_status_display }} {{ d.status_detail }}</td><td>{{ d.page_count }}</td><td><a href="{% url 'evidence_viewer' d.pk %}">Abrir</a></td></tr>{% endfor %}</table>
-<p><b>Faltantes:</b> {{ payload.missing_documents|join:", "|default:"ninguno" }}</p></div>
-<div class="tab-pane fade" id="t3"><table class="table table-sm bg-white"><tr><th>Documento</th><th>Tipo</th><th>Certeza</th><th>Estado</th><th>Corregir</th></tr>
-{% for d in documents %}{% if d.classification %}<tr><td>{{ d.original_name }}</td><td>{{ d.classification.doc_type }}</td><td>{{ d.classification.confidence }}</td>
-<td>{% if d.classification.manual %}manual{% elif d.classification.needs_review %}<span class="text-danger">revisión humana</span>{% else %}automática{% endif %}{% if d.classification.is_content_duplicate %} · duplicado de contenido{% endif %}</td>
-<td>{% if user.can_correct %}<form method="post" action="{% url 'correct_classification' d.pk %}" class="d-flex gap-1">{% csrf_token %}<select name="doc_type" class="form-select form-select-sm">{% for t in doc_types %}<option value="{{ t.value }}" {% if t.value == d.classification.doc_type %}selected{% endif %}>{{ t.value }}</option>{% endfor %}</select><button class="btn btn-sm btn-outline-primary">OK</button></form>{% endif %}</td></tr>{% endif %}{% endfor %}</table></div>
-<div class="tab-pane fade" id="t4"><table class="table table-sm bg-white"><tr><th>Tipo</th><th>Campo</th><th>Valor</th><th>Normalizado</th><th>Verificación</th><th></th></tr>
-{% for f in fields %}<tr><td>{{ f.doc_type }}</td><td>{{ f.name }}</td><td>{{ f.raw_value }}</td><td class="text-muted">{{ f.normalized_value }}</td><td>{{ f.verification }}{% if f.origin == 'manual' %} (v{{ f.version }}){% endif %}</td>
-<td>{% if user.can_correct and f.raw_value != 'no encontrado' or user.can_correct and f.origin == 'agent' %}<form method="post" action="{% url 'correct_field' f.pk %}" class="d-flex gap-1">{% csrf_token %}<input name="value" class="form-control form-control-sm" placeholder="Corregir"><button class="btn btn-sm btn-outline-primary">OK</button></form>{% endif %}</td></tr>{% endfor %}</table></div>
-<div class="tab-pane fade" id="t5"><table class="table table-sm bg-white"><tr><th>Regla</th><th>Resultado</th><th>Categoría</th><th>Detalle</th></tr>
-{% for r in rules %}<tr><td>{{ r.rule_id }}{% if r.provisional %} <span class="badge bg-warning text-dark">provisional</span>{% endif %}</td><td>{{ r.outcome }}</td><td>{{ r.category }}</td><td>{{ r.message }}</td></tr>{% endfor %}</table></div>
-<div class="tab-pane fade" id="t6">{% for d in discrepancies %}<div class="panel mb-2"><div class="p-3"><b>{{ d.field }}</b> — {{ d.kind }}{% if d.kind == 'formato' %} (solo diferencia de formato){% endif %}<ul class="mb-0">{% for v in d.values %}<li>{{ v.doc_type }}: «{{ v.raw }}» <a href="{% url 'evidence_viewer' v.evidence.document_id %}?page={{ v.evidence.page }}">p. {{ v.evidence.page }}</a></li>{% endfor %}</ul></div></div>{% empty %}<p class="text-muted">Sin inconsistencias.</p>{% endfor %}</div>
-<div class="tab-pane fade" id="t7">{% for f in found_fields %}<div class="mb-3"><b>{{ f.doc_type }}.{{ f.name }}</b> — {{ f.verification }}<div class="quote">{{ f.quote }}</div><a href="{% url 'evidence_viewer' f.document_id %}?page={{ f.page|default:1 }}">Abrir PDF en p. {{ f.page }}</a></div>{% endfor %}</div>
-<div class="tab-pane fade" id="t8"><table class="table table-sm bg-white"><tr><th>Agente</th><th>Estado</th><th>ms</th><th>Reintentos</th><th>Config</th><th>Error</th></tr>
-{% for r in runs %}<tr><td>{{ r.agent }}</td><td>{{ r.status }}</td><td>{{ r.duration_ms }}</td><td>{{ r.retries }}</td><td>{{ r.ruleset_version }}</td><td>{{ r.error }}</td></tr>{% endfor %}</table></div>
-</div>{% endblock %}
+{% extends "base.html" %}{% block title %}{{ dossier.code }} — Expediente{% endblock %}{% block content %}
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-0">{{ dossier.code }}</h1>
+    <p class="text-muted mb-0">Creado el {{ dossier.created_at|date:"d/m/Y H:i" }} · Estado: {{ dossier.get_status_display }}</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if verdict %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'pdf' %}">Exportar PDF</a> <a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'json' %}">Exportar JSON</a>{% endif %}
+    {% if user.can_correct %}<form class="d-inline" method="post" action="{% url 'rerun' dossier.pk %}">{% csrf_token %}<button class="btn btn-sm btn-accent">Re-ejecutar validaciones</button></form>{% endif %}
+  </div>
+</div>
+<nav class="section-nav" aria-label="Secciones del expediente">
+  <a href="#t1">Dictamen</a><a href="#t2">Documentos</a><a href="#t3">Qué revisar primero</a><a href="#t4">Datos extraídos</a><a href="#t5">Reglas</a><a href="#t7">Evidencia</a><a href="#t8">Bitácora</a>
+</nav>
+
+{# 1. Dictamen: lo primero que debe entender el equipo legal. #}
+<section id="t1" aria-labelledby="h-dictamen">
+{% if verdict %}
+<div class="verdict-hero {{ verdict.recommendation }} mb-3">
+  <h2 class="h4 mb-1" id="h-dictamen">Recomendación inicial</h2>
+  <p class="verdict-label mb-2"><span class="badge badge-{{ verdict.recommendation }}">{% if verdict.recommendation == 'cumple' %}✓ {% elif verdict.recommendation == 'no_cumple' %}✕ {% else %}! {% endif %}{{ dossier.get_recommendation_label }}</span></p>
+  <p class="mb-2">{% if verdict.recommendation == 'cumple' %}Todos los requisitos revisados se cumplen y no hay inconsistencias críticas. Es el expediente con menos trabajo pendiente.{% elif verdict.recommendation == 'no_cumple' %}Hay un incumplimiento claro, sustentado en evidencia verificada. Revise el hallazgo antes de descartarlo.{% else %}No se puede dictaminar todavía: faltan documentos, hay discrepancias o la evidencia no basta. Es el caso habitual cuando algo necesita una persona.{% endif %}</p>
+  <p class="mb-1"><b>Confianza:</b> {% if verdict.confidence >= 0.8 %}Alta{% elif verdict.confidence >= 0.5 %}Media{% else %}Baja{% endif %} ({{ verdict.confidence }})</p>
+  <div class="conf-bar mb-2" role="img" aria-label="Confianza del análisis: {{ verdict.confidence }}"><i style="width:{% widthratio verdict.confidence 1 100 %}%"></i></div>
+  <p class="text-muted small mb-0">{{ payload.disclaimer }}</p>
+  <h3 class="h6 mt-3">Por qué se llegó a esta recomendación</h3>
+  <ul class="mb-0">{% for j in payload.justification %}<li>{{ j }}</li>{% empty %}<li>Sin justificación registrada.</li>{% endfor %}</ul>
+</div>
+<div class="panel panel-pad mb-3">
+  <h2 class="h5">Qué hacer ahora</h2>
+  <ol class="next-steps">
+    {% if payload.missing_documents %}<li><span><b>Pida los documentos faltantes:</b> {{ payload.missing_documents|join:", " }}. Sin ellos el expediente no puede ser <i>Cumple</i>.</span></li>{% endif %}
+    {% if discrepancies %}<li><span><b>Revise las {{ discrepancies|length }} inconsistencias</b> entre documentos (<a href="#t3">ver abajo</a>): compare los valores y su evidencia antes de corregir nada.</span></li>{% endif %}
+    {% if payload.unmet %}<li><span><b>Atienda los requisitos incumplidos:</b> {{ payload.unmet|join:", " }}.</span></li>{% endif %}
+    {% if verdict.recommendation == 'cumple' %}<li><span><b>Pase el expediente a revisión final</b> del equipo legal; si quiere, expórtelo en PDF o JSON desde arriba.</span></li>
+    {% elif verdict.recommendation == 'no_cumple' %}<li><span><b>Confirme el incumplimiento con la evidencia</b> citada antes de cerrar el expediente.</span></li>
+    {% else %}<li><span><b>Cuando resuelva lo anterior, re-ejecute las validaciones</b> para obtener un dictamen actualizado.</span></li>{% endif %}
+  </ol>
+  {% if payload.satisfied %}<p class="small text-muted mb-0 mt-2"><b>Requisitos cumplidos:</b> {{ payload.satisfied|join:", " }}</p>{% endif %}
+</div>
+{% for w in warnings %}<div class="alert alert-warning py-2">{{ w }}</div>{% endfor %}
+{% else %}
+<div class="alert alert-info">Aún sin dictamen. <a href="{% url 'progress' dossier.pk %}">Ver progreso del análisis</a></div>
+{% endif %}
+</section>
+
+{# 2. Documentos: recibidos y faltantes en una sola lista. #}
+<section id="t2" aria-labelledby="h-docs" class="panel panel-pad mb-3">
+  <h2 class="h5" id="h-docs">Documentos del expediente</h2>
+  <ul class="checklist">
+    {% for d in documents %}
+    <li><span class="mark {% if d.status == 'ok' %}yes{% else %}maybe{% endif %}" aria-hidden="true">{% if d.status == 'ok' %}✓{% else %}!{% endif %}</span>
+      <span><b>{{ d.original_name }}</b>{% if d.classification %} — {{ d.classification.doc_type }} (certeza {{ d.classification.confidence }}){% endif %}
+      <small>{{ d.get_status_display }}{% if d.status_detail %} — {{ d.status_detail }}{% endif %} · {{ d.page_count }} páginas</small></span>
+      <span class="ms-auto"><a href="{% url 'evidence_viewer' d.pk %}">Abrir PDF</a></span></li>
+    {% empty %}<li><span class="text-muted">Aún no hay documentos en este expediente.</span></li>{% endfor %}
+    {% for m in payload.missing_documents %}
+    <li><span class="mark no" aria-hidden="true">–</span><span><b>{{ m }}</b><small>Falta este tipo documental. El expediente no puede ser <i>Cumple</i> sin él.</small></span><span class="ms-auto"><span class="chip chip-missing">Falta</span></span></li>
+    {% endfor %}
+  </ul>
+  <h3 class="h6 mt-3">Clasificación de cada documento</h3>
+  <p class="text-muted small">Si el sistema clasificó mal un documento, corríjalo aquí; se re-ejecutan las etapas afectadas.</p>
+  <div class="table-responsive"><table class="table table-sm bg-white"><thead><tr><th scope="col">Documento</th><th scope="col">Tipo</th><th scope="col">Certeza</th><th scope="col">Estado</th><th scope="col">Corregir tipo</th></tr></thead><tbody>
+  {% for d in documents %}{% if d.classification %}<tr><td>{{ d.original_name }}</td><td>{{ d.classification.doc_type }}</td><td>{{ d.classification.confidence }}</td>
+  <td>{% if d.classification.manual %}Corregido a mano{% elif d.classification.needs_review %}<span class="text-danger">Necesita revisión humana</span>{% else %}Automática{% endif %}{% if d.classification.is_content_duplicate %} · duplicado de contenido{% endif %}</td>
+  <td>{% if user.can_correct %}<form method="post" action="{% url 'correct_classification' d.pk %}" class="d-flex gap-1">{% csrf_token %}<label class="visually-hidden" for="ct-{{ d.pk }}">Tipo para {{ d.original_name }}</label><select id="ct-{{ d.pk }}" name="doc_type" class="form-select form-select-sm">{% for t in doc_types %}<option value="{{ t.value }}" {% if t.value == d.classification.doc_type %}selected{% endif %}>{{ t.value }}</option>{% endfor %}</select><button class="btn btn-sm btn-outline-primary">Guardar</button></form>{% endif %}</td></tr>{% endif %}{% endfor %}
+  </tbody></table></div>
+</section>
+
+{# 3. Qué revisar primero: inconsistencias y requisitos incumplidos, antes que el resto. #}
+<section id="t3" aria-labelledby="h-first" class="mb-3">
+  <h2 class="h5" id="h-first">Qué revisar primero</h2>
+  {% for d in discrepancies %}
+  <div class="panel mb-2"><div class="p-3"><b>{{ d.field }}</b> — {{ d.kind }}{% if d.kind == 'formato' %} (solo diferencia de formato, no es un error real){% endif %}{% if d.critical %} <span class="chip chip-missing">Crítica</span>{% endif %}
+  <ul class="mb-0 mt-1">{% for v in d.values %}<li>{{ v.doc_type }}: «{{ v.raw }}» <a href="{% url 'evidence_viewer' v.evidence.document_id %}?page={{ v.evidence.page }}">ver evidencia, p. {{ v.evidence.page }}</a></li>{% endfor %}</ul></div></div>
+  {% empty %}<p class="text-muted">Sin inconsistencias entre documentos.</p>{% endfor %}
+  {% if payload.unmet %}
+  <h3 class="h6 mt-3">Requisitos incumplidos</h3>
+  <ul>{% for u in payload.unmet %}<li>{{ u }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if not discrepancies and not payload.unmet %}<p class="text-muted mb-0">No hay hallazgos prioritarios: ni inconsistencias ni requisitos incumplidos.</p>{% endif %}
+</section>
+
+{# 4. Datos extraídos, agrupados por documento y plegables. #}
+<section id="t4" aria-labelledby="h-data" class="mb-3">
+  <h2 class="h5" id="h-data">Datos extraídos</h2>
+  <p class="text-muted small">Cada dato muestra su valor y si la cita fue verificada en el PDF. Puede corregir un valor; se guarda como nueva versión y se re-ejecutan las validaciones.</p>
+  {% regroup fields by doc_type as by_type %}
+  {% for group in by_type %}
+  <details class="panel mb-2" {% if forloop.first %}open{% endif %}>
+    <summary>{{ group.grouper }} ({{ group.list|length }} datos)</summary>
+    <div class="panel-body"><div class="table-responsive"><table class="table table-sm bg-white"><thead><tr><th scope="col">Campo</th><th scope="col">Valor</th><th scope="col">Verificación</th><th scope="col">Corregir</th></tr></thead><tbody>
+    {% for f in group.list %}<tr><td>{{ f.name }}</td><td>{{ f.raw_value }}{% if f.normalized_value and f.normalized_value != f.raw_value %}<br><span class="text-muted small">Normalizado: {{ f.normalized_value }}</span>{% endif %}</td>
+    <td>{% if f.verification == 'verificada' %}<span class="chip chip-ok">✓ Verificada</span>{% else %}{{ f.verification }}{% endif %}{% if f.origin == 'manual' %} (v{{ f.version }}, a mano){% endif %}</td>
+    <td>{% if user.can_correct and f.raw_value != 'no encontrado' or user.can_correct and f.origin == 'agent' %}<form method="post" action="{% url 'correct_field' f.pk %}" class="d-flex gap-1">{% csrf_token %}<label class="visually-hidden" for="cf-{{ f.pk }}">Corregir {{ f.name }}</label><input id="cf-{{ f.pk }}" name="value" class="form-control form-control-sm" placeholder="Corregir valor"><button class="btn btn-sm btn-outline-primary">Guardar</button></form>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div></div>
+  </details>
+  {% empty %}<p class="text-muted">Sin datos extraídos todavía.</p>{% endfor %}
+</section>
+
+{# 5. Reglas. #}
+<section id="t5" aria-labelledby="h-rules" class="panel panel-pad mb-3">
+  <h2 class="h5" id="h-rules">Validación por reglas</h2>
+  <p class="text-muted small">Cada regla se evaluó contra su documento y su evidencia. Las marcadas como provisionales usan criterios aún por confirmar por el comité.</p>
+  <div class="table-responsive"><table class="table table-sm bg-white"><thead><tr><th scope="col">Regla</th><th scope="col">Resultado</th><th scope="col">Categoría</th><th scope="col">Detalle</th></tr></thead><tbody>
+  {% for r in rules %}<tr><td>{{ r.rule_id }}{% if r.provisional %} <span class="badge bg-warning text-dark">provisional</span>{% endif %}</td>
+  <td>{% if r.outcome == 'cumple' %}<span class="chip chip-ok">✓ Cumple</span>{% elif r.outcome == 'no_cumple' %}<span class="chip chip-missing">✕ No cumple</span>{% else %}<span class="chip chip-neutral">{{ r.outcome }}</span>{% endif %}</td>
+  <td>{{ r.category }}</td><td>{{ r.message }}</td></tr>{% empty %}<tr><td colspan="4" class="text-muted">Sin reglas evaluadas todavía.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+{# 6. Evidencia. #}
+<section id="t7" aria-labelledby="h-evidence" class="mb-3">
+  <h2 class="h5" id="h-evidence">Evidencia</h2>
+  <p class="text-muted small">La cita literal que sustenta cada dato. Al abrirla se muestra el PDF en la página exacta.</p>
+  {% for f in found_fields %}<div class="mb-3"><b>{{ f.doc_type }} · {{ f.name }}</b> — {{ f.verification }}<div class="quote">{{ f.quote }}</div><a href="{% url 'evidence_viewer' f.document_id %}?page={{ f.page|default:1 }}">Abrir PDF en p. {{ f.page }}</a></div>
+  {% empty %}<p class="text-muted">Sin evidencia registrada todavía.</p>{% endfor %}
+</section>
+
+{# 7. Bitácora, al final: es para la demostración, no para decidir. #}
+<details id="t8" class="panel mb-3">
+  <summary>Bitácora de agentes — qué hizo cada agente y en cuánto tiempo</summary>
+  <div class="panel-body"><div class="table-responsive"><table class="table table-sm bg-white"><thead><tr><th scope="col">Agente</th><th scope="col">Estado</th><th scope="col">Tiempo (ms)</th><th scope="col">Reintentos</th><th scope="col">Configuración</th><th scope="col">Error</th></tr></thead><tbody>
+  {% for r in runs %}<tr><td>{{ r.agent }}</td><td>{{ r.status }}</td><td>{{ r.duration_ms }}</td><td>{{ r.retries }}</td><td>{{ r.ruleset_version }}</td><td>{{ r.error }}</td></tr>{% empty %}<tr><td colspan="6" class="text-muted">Sin ejecuciones registradas.</td></tr>{% endfor %}
+  </tbody></table></div></div>
+</details>
+{% endblock %}

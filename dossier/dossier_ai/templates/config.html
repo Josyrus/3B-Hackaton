@@ -1,7 +1,9 @@
-{% extends "base.html" %}{% block content %}
-<h3>Configuración</h3><p>Versión activa: <b>{{ version }}</b>. Los valores <code>null</code> son criterios pendientes de confirmación oficial.</p>
+{% extends "base.html" %}{% block title %}Configuración de reglas{% endblock %}{% block content %}
+<h1 class="h3">Configuración de reglas</h1>
+<p>Versión activa: <b>{{ version }}</b>. Los valores <code>null</code> son criterios pendientes de confirmación oficial. Guardar crea una nueva versión; las anteriores quedan registradas a la derecha.</p>
 <div class="row"><div class="col-md-8"><form method="post">{% csrf_token %}
-<textarea class="form-control font-monospace" name="yaml_text" rows="30">{{ yaml_text }}</textarea>
+<label class="form-label" for="yaml_text">Reglas en YAML</label>
+<textarea class="form-control font-monospace" id="yaml_text" name="yaml_text" rows="30">{{ yaml_text }}</textarea>
 <button class="btn btn-accent mt-2">Validar y guardar nueva versión</button></form></div>
-<div class="col-md-4"><h6>Reglas ({{ ruleset.rules|length }})</h6><ul class="small">{% for r in ruleset.rules %}<li>{{ r.id }} {% if r.provisional %}<span class="badge bg-warning text-dark">provisional</span>{% endif %}</li>{% endfor %}</ul>
-<h6>Versiones</h6><ul class="small">{% for v in versions %}<li>#{{ v.pk }} {{ v.version }} — {{ v.created_at|date:"d/m/Y H:i" }}</li>{% empty %}<li>Solo archivo por defecto</li>{% endfor %}</ul></div></div>{% endblock %}
+<div class="col-md-4"><h2 class="h6">Reglas ({{ ruleset.rules|length }})</h2><ul class="small">{% for r in ruleset.rules %}<li>{{ r.id }} {% if r.provisional %}<span class="badge bg-warning text-dark">provisional</span>{% endif %}</li>{% endfor %}</ul>
+<h2 class="h6">Versiones</h2><ul class="small">{% for v in versions %}<li>#{{ v.pk }} {{ v.version }} — {{ v.created_at|date:"d/m/Y H:i" }}</li>{% empty %}<li>Solo archivo por defecto</li>{% endfor %}</ul></div></div>{% endblock %}

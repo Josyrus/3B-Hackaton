@@ -1,0 +1,532 @@
+--- a/dossier/dossier_ai/README.md
++++ b/dossier/dossier_ai/README.md
+@@ -22,6 +22,14 @@
+ pytest            # 57 pruebas (núcleo, agentes, seguridad, API, exportación)
+ ruff check .
+ ```
++
++## Interfaz (rediseño intuitivo, solo plantillas)
++El cambio toca únicamente `templates/`; no se modificó ningún `views.py`, modelo, URL ni regla de negocio, así que el flujo y las pruebas existentes siguen iguales.
++- **Inicio:** indicador de 3 pasos (Subir → Analizar → Revisar dictamen) y lista de verificación de los 4 tipos documentales. Al elegir archivos, la lista marca qué tipos parecen estar por el nombre del archivo (se confirma en el análisis; un ZIP vale igual) y el botón explica por qué está desactivado hasta elegir al menos un archivo.
++- **Detalle del expediente:** se eliminaron las 8 pestañas que escondían el contenido. Ahora es una sola página en orden de trabajo: dictamen grande con confianza en Alta/Media/Baja, **Qué hacer ahora** (faltantes → inconsistencias → incumplidos), documentos recibidos y faltantes en una lista, hallazgos prioritarios primero, datos extraídos agrupados por documento y plegables, reglas, evidencia y, al final, la bitácora de agentes.
++- **Lista:** filtros con etiqueta, la recomendación elegida ya no se pierde al filtrar (antes no se conservaba), botón para limpiar filtros y conteo de resultados.
++- **Progreso:** mismos datos, pero con el indicador de pasos, barra con `role="progressbar"` y explicación en lenguaje claro de lo que hace el sistema.
++- **Accesibilidad:** enlace para saltar al contenido, menú que colapsa en móvil, `aria-current` en la navegación, etiquetas en todos los formularios y filtros, y los estados ya no dependen solo del color: cada recomendación lleva icono y texto (✓ Cumple, ! Requiere revisión, ✕ No cumple).
+ 
+ ## Arquitectura
+ ```
+--- a/dossier/dossier_ai/templates/_table.html
++++ b/dossier/dossier_ai/templates/_table.html
+@@ -1,6 +1,6 @@
+-<table class="table align-middle mb-0"><thead><tr><th>Expediente</th><th>Creado</th><th>Estado</th><th>Recomendación</th><th class="text-end">Confianza</th></tr></thead><tbody>
++<div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th scope="col">Expediente</th><th scope="col">Creado</th><th scope="col">Estado</th><th scope="col">Recomendación</th><th scope="col" class="text-end">Confianza</th></tr></thead><tbody>
+ {% for d in dossiers %}<tr><td><a class="fw-semibold" href="{% url 'detail' d.pk %}">{{ d.code }}</a></td><td>{{ d.created_at|date:"d/m/Y H:i" }}</td>
+ <td>{{ d.get_status_display }}{% if d.status == 'procesando' %} <a class="small" href="{% url 'progress' d.pk %}">ver progreso</a>{% endif %}</td>
+-<td>{% if d.recommendation %}<span class="chip chip-{{ d.recommendation }}">{{ d.get_recommendation_label }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
++<td>{% if d.recommendation %}<span class="chip chip-{{ d.recommendation }}">{% if d.recommendation == 'cumple' %}✓ {% elif d.recommendation == 'no_cumple' %}✕ {% else %}! {% endif %}{{ d.get_recommendation_label }}</span>{% else %}<span class="text-muted">Sin dictamen aún</span>{% endif %}</td>
+ <td class="text-end">{% if d.confidence is not None %}{{ d.confidence }}{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>
+-{% empty %}<tr><td colspan="5" class="text-muted py-4">Todavía no hay expedientes. Suba documentos arriba para crear el primero.</td></tr>{% endfor %}</tbody></table>
++{% empty %}<tr><td colspan="5" class="text-muted py-4">Todavía no hay expedientes. <a href="{% url 'dashboard' %}">Suba documentos en el inicio</a> para crear el primero.</td></tr>{% endfor %}</tbody></table></div>
+--- a/dossier/dossier_ai/templates/base.html
++++ b/dossier/dossier_ai/templates/base.html
+@@ -5,46 +5,96 @@
+ <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+ <style>
+ :root{--ink:#17212b;--muted:#5d6b7a;--paper:#f3f5f7;--card:#fff;--line:#d9dfe5;--accent:#0f6b63;--accent-dark:#0a504a;
+---ok:#1b7a4b;--ok-bg:#e3f3ea;--warn:#8a5a00;--warn-bg:#fbefd0;--bad:#9b2c2c;--bad-bg:#f8e1e1;
++--ok:#1b7a4b;--ok-bg:#e3f3ea;--warn:#8a5a00;--warn-bg:#fbefd0;--bad:#9b2c2c;--bad-bg:#f8e1e1;--info-bg:#e8f0f8;--info:#1d4e7a;
+ --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;--sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+ body{background:var(--paper);color:var(--ink);font-family:var(--sans)}
+ h1,h2,h3,h4,h5{font-family:var(--serif);font-weight:600;letter-spacing:-.01em}
+ a{color:var(--accent)}a:hover{color:var(--accent-dark)}
+ :focus-visible{outline:3px solid #7cc4bb;outline-offset:2px}
++.skip-link{position:absolute;left:-999px;top:0;background:var(--accent);color:#fff;padding:.6rem 1rem;z-index:100;border-radius:0 0 6px 0}
++.skip-link:focus{left:0;color:#fff}
+ .topbar{background:var(--card);border-bottom:1px solid var(--line)}
+ .brand{font-family:var(--serif);font-size:1.25rem;font-weight:700;color:var(--ink);text-decoration:none}
+ .brand span{color:var(--accent)}
+ .topbar .nav-link{color:var(--muted);padding:.9rem .9rem;border-bottom:2px solid transparent}
+ .topbar .nav-link:hover{color:var(--ink)}.topbar .nav-link.active{color:var(--ink);border-color:var(--accent)}
+-.panel{background:var(--card);border:1px solid var(--line);border-radius:6px}
++.panel{background:var(--card);border:1px solid var(--line);border-radius:8px}
+ .panel-pad{padding:1.5rem}
+ .btn-accent{background:var(--accent);border-color:var(--accent);color:#fff}.btn-accent:hover,.btn-accent:focus{background:var(--accent-dark);border-color:var(--accent-dark);color:#fff}
+ .btn-accent:disabled{background:#8fb5b1;border-color:#8fb5b1;color:#fff}
+-.chip{display:inline-block;padding:.12rem .6rem;border-radius:999px;font-size:.8rem;font-weight:600}
++.chip{display:inline-flex;align-items:center;gap:.3rem;padding:.15rem .65rem;border-radius:999px;font-size:.82rem;font-weight:600;white-space:nowrap}
+ .chip-cumple,.badge-cumple{background:var(--ok-bg);color:var(--ok)}
+ .chip-requiere_revision,.badge-requiere_revision{background:var(--warn-bg);color:var(--warn)}
+ .chip-no_cumple,.badge-no_cumple{background:var(--bad-bg);color:var(--bad)}
+ .badge.badge-cumple,.badge.badge-requiere_revision,.badge.badge-no_cumple{font-size:.95rem;padding:.35rem .7rem}
++.chip-missing{background:var(--bad-bg);color:var(--bad)}
++.chip-ok{background:var(--ok-bg);color:var(--ok)}
++.chip-neutral{background:#eef1f4;color:var(--muted)}
+ .quote{font-family:var(--serif);background:#f7f9fa;border-left:3px solid var(--accent);padding:.5rem .8rem;border-radius:0 4px 4px 0}
+ .table{--bs-table-bg:transparent}.table th{color:var(--muted);font-weight:600;font-size:.85rem}
+-.nav-tabs .nav-link{color:var(--muted)}.nav-tabs .nav-link.active{color:var(--ink);font-weight:600;border-bottom-color:var(--card)}
++.table th[scope="col"]{white-space:nowrap}
+ .alert{border-radius:6px}
++/* Pasos 1-2-3: el usuario siempre sabe dónde está y qué sigue. */
++.steps{list-style:none;display:flex;gap:0;margin:0 0 1.25rem;padding:0;flex-wrap:wrap}
++.steps li{flex:1;min-width:9rem;position:relative;padding:.55rem .75rem .55rem 2.6rem;border:1px solid var(--line);background:var(--card);color:var(--muted);font-size:.9rem}
++.steps li:first-child{border-radius:8px 0 0 8px}.steps li:last-child{border-radius:0 8px 8px 0}
++.steps li+li{border-left:0}
++.steps .n{position:absolute;left:.7rem;top:50%;transform:translateY(-50%);width:1.5rem;height:1.5rem;border-radius:50%;background:#eef1f4;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem}
++.steps li.current{color:var(--ink);border-color:var(--accent);background:#eef7f6;font-weight:600}
++.steps li.current .n{background:var(--accent);color:#fff}
++.steps li.done{color:var(--ok)}.steps li.done .n{background:var(--ok);color:#fff}
++/* Lista de verificación: qué falta, sin tener que leer tablas. */
++.checklist{list-style:none;margin:0;padding:0}
++.checklist li{display:flex;gap:.6rem;align-items:flex-start;padding:.5rem 0;border-bottom:1px solid var(--line)}
++.checklist li:last-child{border-bottom:0}
++.checklist .mark{flex:0 0 1.4rem;width:1.4rem;height:1.4rem;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem}
++.checklist .mark.yes{background:var(--ok-bg);color:var(--ok)}
++.checklist .mark.no{background:var(--bad-bg);color:var(--bad)}
++.checklist .mark.maybe{background:var(--warn-bg);color:var(--warn)}
++.checklist small{color:var(--muted);display:block}
++/* Dictamen: una sola tarjeta grande, nunca solo un color. */
++.verdict-hero{border-radius:8px;padding:1.5rem;border:1px solid var(--line);background:var(--card)}
++.verdict-hero.cumple{border-left:6px solid var(--ok)}
++.verdict-hero.requiere_revision{border-left:6px solid #d19a1f}
++.verdict-hero.no_cumple{border-left:6px solid var(--bad)}
++.verdict-label{font-size:1.5rem;font-weight:700}
++.conf-bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
++.conf-bar i{display:block;height:100%;background:var(--accent)}
++.next-steps{list-style:none;margin:0;padding:0;counter-reset:step}
++.next-steps li{counter-increment:step;display:flex;gap:.7rem;padding:.5rem 0;border-bottom:1px solid var(--line)}
++.next-steps li:last-child{border-bottom:0}
++.next-steps li::before{content:counter(step);flex:0 0 1.5rem;width:1.5rem;height:1.5rem;border-radius:50%;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;margin-top:.1rem}
++.section-nav{position:sticky;top:0;z-index:10;background:var(--paper);padding:.5rem 0;border-bottom:1px solid var(--line);margin-bottom:1.25rem}
++.section-nav a{margin-right:1rem;white-space:nowrap;font-size:.92rem}
++details.panel{padding:0}
++details.panel>summary{cursor:pointer;padding:1rem 1.25rem;font-weight:600;list-style:none}
++details.panel>summary::-webkit-details-marker{display:none}
++details.panel>summary::after{content:" +";color:var(--accent)}
++details.panel[open]>summary::after{content:" −";color:var(--accent)}
++details.panel>.panel-body{padding:0 1.25rem 1.25rem}
++@media (prefers-reduced-motion:reduce){*{transition:none!important}}
++@media (max-width:576px){.steps li{min-width:100%;border-left:1px solid var(--line)!important;border-radius:8px!important;margin-bottom:.4rem}}
+ </style></head>
+ <body>
+-<header class="topbar mb-4"><div class="container d-flex align-items-center gap-4 flex-wrap">
++<a class="skip-link" href="#contenido">Saltar al contenido</a>
++<header class="topbar mb-4"><nav class="navbar navbar-expand-md py-0" aria-label="Principal"><div class="container">
+ <a class="brand py-2" href="{% url 'dashboard' %}">Expediente<span>.</span>ai</a>
+ {% if user.is_authenticated %}
+-<nav class="nav me-auto">
+-<a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">Inicio</a>
+-<a class="nav-link {% if request.resolver_match.url_name == 'list' %}active{% endif %}" href="{% url 'list' %}">Expedientes</a>
+-{% if user.is_tech_admin %}<a class="nav-link {% if request.resolver_match.url_name == 'config_home' %}active{% endif %}" href="{% url 'config_home' %}">Configuración</a>{% endif %}
+-</nav>
+-<form method="post" action="{% url 'logout' %}" class="d-flex align-items-center gap-2">{% csrf_token %}
++<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu" aria-controls="menu" aria-expanded="false" aria-label="Mostrar menú"><span class="navbar-toggler-icon"></span></button>
++<div class="collapse navbar-collapse" id="menu">
++<ul class="navbar-nav me-auto">
++<li class="nav-item"><a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" {% if request.resolver_match.url_name == 'dashboard' %}aria-current="page"{% endif %} href="{% url 'dashboard' %}">Inicio</a></li>
++<li class="nav-item"><a class="nav-link {% if request.resolver_match.url_name == 'list' %}active{% endif %}" {% if request.resolver_match.url_name == 'list' %}aria-current="page"{% endif %} href="{% url 'list' %}">Expedientes</a></li>
++{% if user.is_tech_admin %}<li class="nav-item"><a class="nav-link {% if request.resolver_match.url_name == 'config_home' %}active{% endif %}" {% if request.resolver_match.url_name == 'config_home' %}aria-current="page"{% endif %} href="{% url 'config_home' %}">Configuración</a></li>{% endif %}
++</ul>
++<form method="post" action="{% url 'logout' %}" class="d-flex align-items-center gap-2 py-2">{% csrf_token %}
+ <span class="text-muted small">{{ user.get_username }}</span><button class="btn btn-sm btn-outline-secondary">Cerrar sesión</button></form>
++</div>
+ {% endif %}
+-</div></header>
+-<main class="container pb-5">
++</div></nav></header>
++<main class="container pb-5" id="contenido">
+ {% for m in messages %}<div class="alert {% if m.tags == 'error' %}alert-danger{% elif m.tags == 'warning' %}alert-warning{% elif m.tags == 'success' %}alert-success{% else %}alert-info{% endif %}" role="alert">{{ m }}</div>{% endfor %}
+ {% block content %}{% endblock %}</main>
++<footer class="container pb-4"><p class="text-muted small mb-0">La recomendación es inicial y no sustituye la decisión del equipo legal. Cada hallazgo cita su evidencia.</p></footer>
+ <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+ {% block scripts %}{% endblock %}</body></html>
+--- a/dossier/dossier_ai/templates/config.html
++++ b/dossier/dossier_ai/templates/config.html
+@@ -1,7 +1,9 @@
+-{% extends "base.html" %}{% block content %}
+-<h3>Configuración</h3><p>Versión activa: <b>{{ version }}</b>. Los valores <code>null</code> son criterios pendientes de confirmación oficial.</p>
++{% extends "base.html" %}{% block title %}Configuración de reglas{% endblock %}{% block content %}
++<h1 class="h3">Configuración de reglas</h1>
++<p>Versión activa: <b>{{ version }}</b>. Los valores <code>null</code> son criterios pendientes de confirmación oficial. Guardar crea una nueva versión; las anteriores quedan registradas a la derecha.</p>
+ <div class="row"><div class="col-md-8"><form method="post">{% csrf_token %}
+-<textarea class="form-control font-monospace" name="yaml_text" rows="30">{{ yaml_text }}</textarea>
++<label class="form-label" for="yaml_text">Reglas en YAML</label>
++<textarea class="form-control font-monospace" id="yaml_text" name="yaml_text" rows="30">{{ yaml_text }}</textarea>
+ <button class="btn btn-accent mt-2">Validar y guardar nueva versión</button></form></div>
+-<div class="col-md-4"><h6>Reglas ({{ ruleset.rules|length }})</h6><ul class="small">{% for r in ruleset.rules %}<li>{{ r.id }} {% if r.provisional %}<span class="badge bg-warning text-dark">provisional</span>{% endif %}</li>{% endfor %}</ul>
+-<h6>Versiones</h6><ul class="small">{% for v in versions %}<li>#{{ v.pk }} {{ v.version }} — {{ v.created_at|date:"d/m/Y H:i" }}</li>{% empty %}<li>Solo archivo por defecto</li>{% endfor %}</ul></div></div>{% endblock %}
++<div class="col-md-4"><h2 class="h6">Reglas ({{ ruleset.rules|length }})</h2><ul class="small">{% for r in ruleset.rules %}<li>{{ r.id }} {% if r.provisional %}<span class="badge bg-warning text-dark">provisional</span>{% endif %}</li>{% endfor %}</ul>
++<h2 class="h6">Versiones</h2><ul class="small">{% for v in versions %}<li>#{{ v.pk }} {{ v.version }} — {{ v.created_at|date:"d/m/Y H:i" }}</li>{% empty %}<li>Solo archivo por defecto</li>{% endfor %}</ul></div></div>{% endblock %}
+--- a/dossier/dossier_ai/templates/dashboard.html
++++ b/dossier/dossier_ai/templates/dashboard.html
+@@ -1,7 +1,8 @@
+-{% extends "base.html" %}{% block content %}
++{% extends "base.html" %}{% block title %}Inicio — Analizar un expediente{% endblock %}{% block content %}
+ <style>
+-.drop{border:2px dashed #9fb2bf;border-radius:8px;background:var(--card);padding:2.5rem 1.5rem;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
++.drop{border:2px dashed #9fb2bf;border-radius:8px;background:var(--card);padding:2rem 1.5rem;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+ .drop:hover,.drop.over{border-color:var(--accent);background:#eef7f6}
++.drop:focus-within{outline:3px solid #7cc4bb;outline-offset:2px}
+ .drop-title{font-family:var(--serif);font-size:1.6rem;margin-bottom:.25rem}
+ .files{list-style:none;margin:1rem 0 0;padding:0;text-align:left}
+ .files li{display:flex;justify-content:space-between;gap:1rem;padding:.45rem .2rem;border-bottom:1px solid var(--line);font-size:.95rem}
+@@ -12,45 +13,67 @@
+ .stat{display:flex;justify-content:space-between;align-items:baseline;padding:.55rem 0;border-bottom:1px solid var(--line)}
+ .stat b{font-family:var(--serif);font-size:1.4rem}
+ </style>
++<h1 class="h2 mb-1">Analizar un expediente</h1>
++<p class="text-muted mb-3">Tres pasos, sin capacitación: suba los PDF, el sistema los clasifica y valida solo, y usted revisa el dictamen con su evidencia.</p>
++<ol class="steps" aria-label="Pasos del análisis">
++  <li class="current"><span class="n" aria-hidden="true">1</span>Subir documentos</li>
++  <li><span class="n" aria-hidden="true">2</span>Análisis automático</li>
++  <li><span class="n" aria-hidden="true">3</span>Revisar el dictamen</li>
++</ol>
+ <div class="row g-4">
+   <div class="col-lg-8">
+-    <h2 class="mb-1">Analizar un expediente</h2>
+-    <p class="text-muted mb-3">Suba los documentos del inmueble: escrituras, predial, alineamiento y número oficial, y uso de suelo. El análisis comienza al cargarlos.</p>
+-    <form method="post" enctype="multipart/form-data" id="upload-form" novalidate>{% csrf_token %}
+-      <label class="drop d-block w-100" id="drop" for="file-input">
+-        <div class="drop-title">Arrastre aquí sus archivos</div>
+-        <div class="text-muted">o haga clic para elegirlos. PDF o un ZIP con PDF, hasta {{ max_mb }} MB cada uno.</div>
+-      </label>
+-      <input type="file" id="file-input" name="files" multiple accept=".pdf,.zip,application/pdf,application/zip" class="visually-hidden">
+-      <ul class="files" id="file-list" aria-live="polite"></ul>
+-      <p class="text-danger small mb-0" id="file-error" role="alert"></p>
+-      <div class="d-flex align-items-center gap-3 mt-3">
+-        <button class="btn btn-accent btn-lg" id="submit" disabled>Crear expediente y analizar</button>
+-        <span class="text-muted small">Los documentos se procesan en este equipo y se guardan de forma privada.</span>
+-      </div>
+-    </form>
++    <div class="panel panel-pad">
++      <h2 class="h5 mb-1">Paso 1 — Suba los documentos del inmueble</h2>
++      <p class="text-muted small mb-3">Se necesitan 4 tipos. Si falta alguno, el dictamen lo señalará como faltante en lugar de descartar el expediente.</p>
++      <ul class="checklist" id="type-checklist" aria-label="Tipos documentales requeridos">
++        <li data-key="escritura" data-words="escritura,escrituras"><span class="mark no" aria-hidden="true">–</span><span><b>Escrituras</b><small>El documento que acredita la propiedad.</small></span></li>
++        <li data-key="predial" data-words="predial"><span class="mark no" aria-hidden="true">–</span><span><b>Predial</b><small>El recibo o constancia del impuesto predial.</small></span></li>
++        <li data-key="alineamiento" data-words="alineamiento,numero,oficial"><span class="mark no" aria-hidden="true">–</span><span><b>Alineamiento y número oficial</b><small>La constancia oficial de alineamiento y número.</small></span></li>
++        <li data-key="uso_suelo" data-words="uso,suelo"><span class="mark no" aria-hidden="true">–</span><span><b>Uso de suelo</b><small>El documento que autoriza el uso del inmueble.</small></span></li>
++      </ul>
++      <p class="text-muted small mt-2 mb-0" id="checklist-note">La marca se deduce solo del nombre del archivo y se confirma en el análisis. Un ZIP con los 4 PDF también vale.</p>
++      <form method="post" enctype="multipart/form-data" id="upload-form" class="mt-3" novalidate>{% csrf_token %}
++        <label class="drop d-block w-100" id="drop" for="file-input">
++          <div class="drop-title">Arrastre aquí sus archivos</div>
++          <div class="text-muted">o haga clic para elegirlos. PDF o un ZIP con PDF, hasta {{ max_mb }} MB cada uno.</div>
++        </label>
++        <input type="file" id="file-input" name="files" multiple accept=".pdf,.zip,application/pdf,application/zip" class="visually-hidden">
++        <p class="small mt-2 mb-0" id="file-count" aria-live="polite">Aún no ha elegido archivos.</p>
++        <ul class="files" id="file-list" aria-live="polite"></ul>
++        <p class="text-danger small mb-0" id="file-error" role="alert"></p>
++        <div class="d-flex align-items-center gap-3 mt-3 flex-wrap">
++          <button class="btn btn-accent btn-lg" id="submit" disabled>Crear expediente y analizar</button>
++          <span class="text-muted small" id="submit-hint">Elija al menos un archivo para continuar.</span>
++        </div>
++        <p class="text-muted small mt-2 mb-0">Los documentos se procesan en este equipo y se guardan de forma privada. El análisis comienza solo al cargarlos.</p>
++      </form>
++    </div>
+   </div>
+   <div class="col-lg-4">
+     <div class="panel panel-pad">
+-      <h5 class="mb-2">Resumen</h5>
++      <h2 class="h5 mb-2">Resumen</h2>
+       <div class="stat"><span>Expedientes</span><b>{{ total }}</b></div>
+-      <div class="stat"><span>Pendientes</span><b>{{ pending }}</b></div>
++      <div class="stat"><span>Pendientes de análisis</span><b>{{ pending }}</b></div>
+       <div class="stat"><span>Analizados</span><b>{{ analyzed }}</b></div>
+-      <h6 class="mt-3 mb-2">Recomendaciones emitidas</h6>
++      <h3 class="h6 mt-3 mb-2">Recomendaciones emitidas</h3>
+       {% if judged %}
+       <div class="rec-bar" role="img" aria-label="Distribución de recomendaciones">{% for d in distribution %}{% if d.n %}<i class="k-{{ d.key }}" style="width:{{ d.pct }}%"></i>{% endif %}{% endfor %}</div>
+-      <ul class="list-unstyled small mt-2 mb-0">{% for d in distribution %}<li class="d-flex justify-content-between"><span><span class="chip chip-{{ d.key }}">{{ d.label }}</span></span><span>{{ d.n }}</span></li>{% endfor %}</ul>
++      <ul class="list-unstyled small mt-2 mb-0">{% for d in distribution %}<li class="d-flex justify-content-between"><span><span class="chip chip-{{ d.key }}">{% if d.key == 'cumple' %}✓ {% elif d.key == 'no_cumple' %}✕ {% else %}! {% endif %}{{ d.label }}</span></span><span>{{ d.n }}</span></li>{% endfor %}</ul>
+       {% else %}<p class="text-muted small mb-0">Aún no hay dictámenes. Cargue su primer expediente.</p>{% endif %}
++      <h3 class="h6 mt-4 mb-2">¿Qué pasa después?</h3>
++      <ol class="small mb-0 ps-3"><li>El sistema clasifica cada PDF y detecta los faltantes.</li><li>Extrae los datos con su evidencia (documento y página).</li><li>Le muestra qué hacer primero: faltantes, inconsistencias o requisitos incumplidos.</li></ol>
+     </div>
+   </div>
+ </div>
+-<div class="d-flex justify-content-between align-items-baseline mt-5 mb-2"><h4 class="mb-0">Expedientes recientes</h4><a href="{% url 'list' %}">Ver todos</a></div>
++<div class="d-flex justify-content-between align-items-baseline mt-5 mb-2"><h2 class="h4 mb-0">Expedientes recientes</h2><a href="{% url 'list' %}">Ver todos</a></div>
+ <div class="panel px-3 pt-2">{% include "_table.html" with dossiers=recent %}</div>
+ {% endblock %}
+ {% block scripts %}<script>
+ (function(){
+   const input=document.getElementById('file-input'),drop=document.getElementById('drop'),list=document.getElementById('file-list'),
+-        err=document.getElementById('file-error'),btn=document.getElementById('submit'),form=document.getElementById('upload-form');
++        err=document.getElementById('file-error'),btn=document.getElementById('submit'),form=document.getElementById('upload-form'),
++        count=document.getElementById('file-count'),hint=document.getElementById('submit-hint'),
++        items=Array.from(document.querySelectorAll('#type-checklist li'));
+   const MAX={{ max_mb }}*1024*1024;let files=[];
+   const fmt=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';
+   const ok=f=>/\.(pdf|zip)$/i.test(f.name);
+@@ -63,6 +86,19 @@
+       const rm=document.createElement('button');rm.type='button';rm.className='btn btn-link btn-sm p-0 ms-2';rm.textContent='Quitar';
+       rm.onclick=()=>{files.splice(i,1);sync();render();};right.appendChild(rm);li.append(name,right);list.appendChild(li);});
+     btn.disabled=files.length===0;
++    count.textContent=files.length===0?'Aún no ha elegido archivos.':files.length===1?'1 archivo listo.':' '+files.length+' archivos listos.';
++    hint.textContent=files.length===0?'Elija al menos un archivo para continuar.':'Listo: se creará el expediente y empezará el análisis.';
++    items.forEach(li=>{
++      const words=li.dataset.words.split(',');
++      const found=files.some(f=>words.some(w=>f.name.toLowerCase().includes(w)));
++      const zip=files.some(f=>/\.zip$/i.test(f.name));
++      const small=li.querySelector('small');
++      if(!li.dataset.hint){li.dataset.hint=small.textContent;}
++      const mark=li.querySelector('.mark');
++      if(found){mark.className='mark yes';mark.textContent='✓';li.querySelector('small').textContent='Detectado por el nombre del archivo; se confirma en el análisis.';}
++      else if(zip){mark.className='mark maybe';mark.textContent='?';li.querySelector('small').textContent='Puede venir dentro del ZIP; se confirma en el análisis.';}
++      else{mark.className='mark no';mark.textContent='–';small.textContent=li.dataset.hint;}
++    });
+   }
+   function add(newFiles){
+     const bad=[];
+@@ -73,10 +109,11 @@
+     }
+     err.textContent=bad.join(' ');sync();render();
+   }
+-  input.addEventListener('change',()=>{const picked=Array.from(input.files);files=files.filter(()=>true);input.value='';add(picked);});
++  input.addEventListener('change',()=>{const picked=Array.from(input.files);input.value='';add(picked);});
+   ['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over');}));
+   ['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('over');}));
+   drop.addEventListener('drop',ev=>add(Array.from(ev.dataTransfer.files)));
+   form.addEventListener('submit',()=>{btn.disabled=true;btn.textContent='Subiendo y analizando…';});
++  render();
+ })();
+ </script>{% endblock %}
+--- a/dossier/dossier_ai/templates/detail.html
++++ b/dossier/dossier_ai/templates/detail.html
+@@ -1,39 +1,127 @@
+-{% extends "base.html" %}{% block content %}
+-<div class="d-flex justify-content-between align-items-center"><h3>{{ dossier.code }}</h3>
+-<div>{% if verdict %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'pdf' %}">PDF</a> <a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'json' %}">JSON</a>{% endif %}
+-{% if user.can_correct %}<form class="d-inline" method="post" action="{% url 'rerun' dossier.pk %}">{% csrf_token %}<button class="btn btn-sm btn-accent">Re-ejecutar validaciones</button></form>{% endif %}</div></div>
+-<ul class="nav nav-tabs my-3" role="tablist">
+-<li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#t1">Resumen y dictamen</a></li>
+-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t2">Documentos</a></li>
+-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t3">Clasificación</a></li>
+-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t4">Información extraída</a></li>
+-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t5">Reglas</a></li>
+-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t6">Inconsistencias</a></li>
+-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t7">Evidencia</a></li>
+-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t8">Bitácora</a></li></ul>
+-<div class="tab-content">
+-<div class="tab-pane fade show active" id="t1">{% if verdict %}
+-<div class="panel panel-pad mb-3"><h4>Recomendación inicial: <span class="badge badge-{{ verdict.recommendation }}">{{ dossier.get_recommendation_label }}</span></h4>
+-<p>Nivel de confianza global: <b>{{ verdict.confidence }}</b></p><p class="text-muted small">{{ payload.disclaimer }}</p>
+-<h6>Justificación</h6><ul>{% for j in payload.justification %}<li>{{ j }}</li>{% endfor %}</ul>
+-<h6>Requisitos cumplidos</h6><p>{{ payload.satisfied|join:", "|default:"—" }}</p><h6>Requisitos incumplidos</h6><p>{{ payload.unmet|join:", "|default:"—" }}</p>
+-<h6>Documentos faltantes</h6><p>{{ payload.missing_documents|join:", "|default:"—" }}</p><h6>Inconsistencias</h6><ul>{% for i in payload.inconsistencies %}<li>{{ i }}</li>{% empty %}<li>—</li>{% endfor %}</ul></div>
+-{% for w in warnings %}<div class="alert alert-warning py-1">{{ w }}</div>{% endfor %}
+-{% else %}<div class="alert alert-info">Aún sin dictamen. <a href="{% url 'progress' dossier.pk %}">Ver progreso</a></div>{% endif %}</div>
+-<div class="tab-pane fade" id="t2"><table class="table table-sm bg-white"><tr><th>Archivo</th><th>Estado</th><th>Páginas</th><th></th></tr>
+-{% for d in documents %}<tr><td>{{ d.original_name }}</td><td>{{ d.get_status_display }} {{ d.status_detail }}</td><td>{{ d.page_count }}</td><td><a href="{% url 'evidence_viewer' d.pk %}">Abrir</a></td></tr>{% endfor %}</table>
+-<p><b>Faltantes:</b> {{ payload.missing_documents|join:", "|default:"ninguno" }}</p></div>
+-<div class="tab-pane fade" id="t3"><table class="table table-sm bg-white"><tr><th>Documento</th><th>Tipo</th><th>Certeza</th><th>Estado</th><th>Corregir</th></tr>
+-{% for d in documents %}{% if d.classification %}<tr><td>{{ d.original_name }}</td><td>{{ d.classification.doc_type }}</td><td>{{ d.classification.confidence }}</td>
+-<td>{% if d.classification.manual %}manual{% elif d.classification.needs_review %}<span class="text-danger">revisión humana</span>{% else %}automática{% endif %}{% if d.classification.is_content_duplicate %} · duplicado de contenido{% endif %}</td>
+-<td>{% if user.can_correct %}<form method="post" action="{% url 'correct_classification' d.pk %}" class="d-flex gap-1">{% csrf_token %}<select name="doc_type" class="form-select form-select-sm">{% for t in doc_types %}<option value="{{ t.value }}" {% if t.value == d.classification.doc_type %}selected{% endif %}>{{ t.value }}</option>{% endfor %}</select><button class="btn btn-sm btn-outline-primary">OK</button></form>{% endif %}</td></tr>{% endif %}{% endfor %}</table></div>
+-<div class="tab-pane fade" id="t4"><table class="table table-sm bg-white"><tr><th>Tipo</th><th>Campo</th><th>Valor</th><th>Normalizado</th><th>Verificación</th><th></th></tr>
+-{% for f in fields %}<tr><td>{{ f.doc_type }}</td><td>{{ f.name }}</td><td>{{ f.raw_value }}</td><td class="text-muted">{{ f.normalized_value }}</td><td>{{ f.verification }}{% if f.origin == 'manual' %} (v{{ f.version }}){% endif %}</td>
+-<td>{% if user.can_correct and f.raw_value != 'no encontrado' or user.can_correct and f.origin == 'agent' %}<form method="post" action="{% url 'correct_field' f.pk %}" class="d-flex gap-1">{% csrf_token %}<input name="value" class="form-control form-control-sm" placeholder="Corregir"><button class="btn btn-sm btn-outline-primary">OK</button></form>{% endif %}</td></tr>{% endfor %}</table></div>
+-<div class="tab-pane fade" id="t5"><table class="table table-sm bg-white"><tr><th>Regla</th><th>Resultado</th><th>Categoría</th><th>Detalle</th></tr>
+-{% for r in rules %}<tr><td>{{ r.rule_id }}{% if r.provisional %} <span class="badge bg-warning text-dark">provisional</span>{% endif %}</td><td>{{ r.outcome }}</td><td>{{ r.category }}</td><td>{{ r.message }}</td></tr>{% endfor %}</table></div>
+-<div class="tab-pane fade" id="t6">{% for d in discrepancies %}<div class="panel mb-2"><div class="p-3"><b>{{ d.field }}</b> — {{ d.kind }}{% if d.kind == 'formato' %} (solo diferencia de formato){% endif %}<ul class="mb-0">{% for v in d.values %}<li>{{ v.doc_type }}: «{{ v.raw }}» <a href="{% url 'evidence_viewer' v.evidence.document_id %}?page={{ v.evidence.page }}">p. {{ v.evidence.page }}</a></li>{% endfor %}</ul></div></div>{% empty %}<p class="text-muted">Sin inconsistencias.</p>{% endfor %}</div>
+-<div class="tab-pane fade" id="t7">{% for f in found_fields %}<div class="mb-3"><b>{{ f.doc_type }}.{{ f.name }}</b> — {{ f.verification }}<div class="quote">{{ f.quote }}</div><a href="{% url 'evidence_viewer' f.document_id %}?page={{ f.page|default:1 }}">Abrir PDF en p. {{ f.page }}</a></div>{% endfor %}</div>
+-<div class="tab-pane fade" id="t8"><table class="table table-sm bg-white"><tr><th>Agente</th><th>Estado</th><th>ms</th><th>Reintentos</th><th>Config</th><th>Error</th></tr>
+-{% for r in runs %}<tr><td>{{ r.agent }}</td><td>{{ r.status }}</td><td>{{ r.duration_ms }}</td><td>{{ r.retries }}</td><td>{{ r.ruleset_version }}</td><td>{{ r.error }}</td></tr>{% endfor %}</table></div>
+-</div>{% endblock %}
++{% extends "base.html" %}{% block title %}{{ dossier.code }} — Expediente{% endblock %}{% block content %}
++<div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
++  <div>
++    <h1 class="h3 mb-0">{{ dossier.code }}</h1>
++    <p class="text-muted mb-0">Creado el {{ dossier.created_at|date:"d/m/Y H:i" }} · Estado: {{ dossier.get_status_display }}</p>
++  </div>
++  <div class="d-flex gap-2 flex-wrap">
++    {% if verdict %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'pdf' %}">Exportar PDF</a> <a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'json' %}">Exportar JSON</a>{% endif %}
++    {% if user.can_correct %}<form class="d-inline" method="post" action="{% url 'rerun' dossier.pk %}">{% csrf_token %}<button class="btn btn-sm btn-accent">Re-ejecutar validaciones</button></form>{% endif %}
++  </div>
++</div>
++<nav class="section-nav" aria-label="Secciones del expediente">
++  <a href="#t1">Dictamen</a><a href="#t2">Documentos</a><a href="#t3">Qué revisar primero</a><a href="#t4">Datos extraídos</a><a href="#t5">Reglas</a><a href="#t7">Evidencia</a><a href="#t8">Bitácora</a>
++</nav>
++
++{# 1. Dictamen: lo primero que debe entender el equipo legal. #}
++<section id="t1" aria-labelledby="h-dictamen">
++{% if verdict %}
++<div class="verdict-hero {{ verdict.recommendation }} mb-3">
++  <h2 class="h4 mb-1" id="h-dictamen">Recomendación inicial</h2>
++  <p class="verdict-label mb-2"><span class="badge badge-{{ verdict.recommendation }}">{% if verdict.recommendation == 'cumple' %}✓ {% elif verdict.recommendation == 'no_cumple' %}✕ {% else %}! {% endif %}{{ dossier.get_recommendation_label }}</span></p>
++  <p class="mb-2">{% if verdict.recommendation == 'cumple' %}Todos los requisitos revisados se cumplen y no hay inconsistencias críticas. Es el expediente con menos trabajo pendiente.{% elif verdict.recommendation == 'no_cumple' %}Hay un incumplimiento claro, sustentado en evidencia verificada. Revise el hallazgo antes de descartarlo.{% else %}No se puede dictaminar todavía: faltan documentos, hay discrepancias o la evidencia no basta. Es el caso habitual cuando algo necesita una persona.{% endif %}</p>
++  <p class="mb-1"><b>Confianza:</b> {% if verdict.confidence >= 0.8 %}Alta{% elif verdict.confidence >= 0.5 %}Media{% else %}Baja{% endif %} ({{ verdict.confidence }})</p>
++  <div class="conf-bar mb-2" role="img" aria-label="Confianza del análisis: {{ verdict.confidence }}"><i style="width:{% widthratio verdict.confidence 1 100 %}%"></i></div>
++  <p class="text-muted small mb-0">{{ payload.disclaimer }}</p>
++  <h3 class="h6 mt-3">Por qué se llegó a esta recomendación</h3>
++  <ul class="mb-0">{% for j in payload.justification %}<li>{{ j }}</li>{% empty %}<li>Sin justificación registrada.</li>{% endfor %}</ul>
++</div>
++<div class="panel panel-pad mb-3">
++  <h2 class="h5">Qué hacer ahora</h2>
++  <ol class="next-steps">
++    {% if payload.missing_documents %}<li><span><b>Pida los documentos faltantes:</b> {{ payload.missing_documents|join:", " }}. Sin ellos el expediente no puede ser <i>Cumple</i>.</span></li>{% endif %}
++    {% if discrepancies %}<li><span><b>Revise las {{ discrepancies|length }} inconsistencias</b> entre documentos (<a href="#t3">ver abajo</a>): compare los valores y su evidencia antes de corregir nada.</span></li>{% endif %}
++    {% if payload.unmet %}<li><span><b>Atienda los requisitos incumplidos:</b> {{ payload.unmet|join:", " }}.</span></li>{% endif %}
++    {% if verdict.recommendation == 'cumple' %}<li><span><b>Pase el expediente a revisión final</b> del equipo legal; si quiere, expórtelo en PDF o JSON desde arriba.</span></li>
++    {% elif verdict.recommendation == 'no_cumple' %}<li><span><b>Confirme el incumplimiento con la evidencia</b> citada antes de cerrar el expediente.</span></li>
++    {% else %}<li><span><b>Cuando resuelva lo anterior, re-ejecute las validaciones</b> para obtener un dictamen actualizado.</span></li>{% endif %}
++  </ol>
++  {% if payload.satisfied %}<p class="small text-muted mb-0 mt-2"><b>Requisitos cumplidos:</b> {{ payload.satisfied|join:", " }}</p>{% endif %}
++</div>
++{% for w in warnings %}<div class="alert alert-warning py-2">{{ w }}</div>{% endfor %}
++{% else %}
++<div class="alert alert-info">Aún sin dictamen. <a href="{% url 'progress' dossier.pk %}">Ver progreso del análisis</a></div>
++{% endif %}
++</section>
++
++{# 2. Documentos: recibidos y faltantes en una sola lista. #}
++<section id="t2" aria-labelledby="h-docs" class="panel panel-pad mb-3">
++  <h2 class="h5" id="h-docs">Documentos del expediente</h2>
++  <ul class="checklist">
++    {% for d in documents %}
++    <li><span class="mark {% if d.status == 'ok' %}yes{% else %}maybe{% endif %}" aria-hidden="true">{% if d.status == 'ok' %}✓{% else %}!{% endif %}</span>
++      <span><b>{{ d.original_name }}</b>{% if d.classification %} — {{ d.classification.doc_type }} (certeza {{ d.classification.confidence }}){% endif %}
++      <small>{{ d.get_status_display }}{% if d.status_detail %} — {{ d.status_detail }}{% endif %} · {{ d.page_count }} páginas</small></span>
++      <span class="ms-auto"><a href="{% url 'evidence_viewer' d.pk %}">Abrir PDF</a></span></li>
++    {% empty %}<li><span class="text-muted">Aún no hay documentos en este expediente.</span></li>{% endfor %}
++    {% for m in payload.missing_documents %}
++    <li><span class="mark no" aria-hidden="true">–</span><span><b>{{ m }}</b><small>Falta este tipo documental. El expediente no puede ser <i>Cumple</i> sin él.</small></span><span class="ms-auto"><span class="chip chip-missing">Falta</span></span></li>
++    {% endfor %}
++  </ul>
++  <h3 class="h6 mt-3">Clasificación de cada documento</h3>
++  <p class="text-muted small">Si el sistema clasificó mal un documento, corríjalo aquí; se re-ejecutan las etapas afectadas.</p>
++  <div class="table-responsive"><table class="table table-sm bg-white"><thead><tr><th scope="col">Documento</th><th scope="col">Tipo</th><th scope="col">Certeza</th><th scope="col">Estado</th><th scope="col">Corregir tipo</th></tr></thead><tbody>
++  {% for d in documents %}{% if d.classification %}<tr><td>{{ d.original_name }}</td><td>{{ d.classification.doc_type }}</td><td>{{ d.classification.confidence }}</td>
++  <td>{% if d.classification.manual %}Corregido a mano{% elif d.classification.needs_review %}<span class="text-danger">Necesita revisión humana</span>{% else %}Automática{% endif %}{% if d.classification.is_content_duplicate %} · duplicado de contenido{% endif %}</td>
++  <td>{% if user.can_correct %}<form method="post" action="{% url 'correct_classification' d.pk %}" class="d-flex gap-1">{% csrf_token %}<label class="visually-hidden" for="ct-{{ d.pk }}">Tipo para {{ d.original_name }}</label><select id="ct-{{ d.pk }}" name="doc_type" class="form-select form-select-sm">{% for t in doc_types %}<option value="{{ t.value }}" {% if t.value == d.classification.doc_type %}selected{% endif %}>{{ t.value }}</option>{% endfor %}</select><button class="btn btn-sm btn-outline-primary">Guardar</button></form>{% endif %}</td></tr>{% endif %}{% endfor %}
++  </tbody></table></div>
++</section>
++
++{# 3. Qué revisar primero: inconsistencias y requisitos incumplidos, antes que el resto. #}
++<section id="t3" aria-labelledby="h-first" class="mb-3">
++  <h2 class="h5" id="h-first">Qué revisar primero</h2>
++  {% for d in discrepancies %}
++  <div class="panel mb-2"><div class="p-3"><b>{{ d.field }}</b> — {{ d.kind }}{% if d.kind == 'formato' %} (solo diferencia de formato, no es un error real){% endif %}{% if d.critical %} <span class="chip chip-missing">Crítica</span>{% endif %}
++  <ul class="mb-0 mt-1">{% for v in d.values %}<li>{{ v.doc_type }}: «{{ v.raw }}» <a href="{% url 'evidence_viewer' v.evidence.document_id %}?page={{ v.evidence.page }}">ver evidencia, p. {{ v.evidence.page }}</a></li>{% endfor %}</ul></div></div>
++  {% empty %}<p class="text-muted">Sin inconsistencias entre documentos.</p>{% endfor %}
++  {% if payload.unmet %}
++  <h3 class="h6 mt-3">Requisitos incumplidos</h3>
++  <ul>{% for u in payload.unmet %}<li>{{ u }}</li>{% endfor %}</ul>
++  {% endif %}
++  {% if not discrepancies and not payload.unmet %}<p class="text-muted mb-0">No hay hallazgos prioritarios: ni inconsistencias ni requisitos incumplidos.</p>{% endif %}
++</section>
++
++{# 4. Datos extraídos, agrupados por documento y plegables. #}
++<section id="t4" aria-labelledby="h-data" class="mb-3">
++  <h2 class="h5" id="h-data">Datos extraídos</h2>
++  <p class="text-muted small">Cada dato muestra su valor y si la cita fue verificada en el PDF. Puede corregir un valor; se guarda como nueva versión y se re-ejecutan las validaciones.</p>
++  {% regroup fields by doc_type as by_type %}
++  {% for group in by_type %}
++  <details class="panel mb-2" {% if forloop.first %}open{% endif %}>
++    <summary>{{ group.grouper }} ({{ group.list|length }} datos)</summary>
++    <div class="panel-body"><div class="table-responsive"><table class="table table-sm bg-white"><thead><tr><th scope="col">Campo</th><th scope="col">Valor</th><th scope="col">Verificación</th><th scope="col">Corregir</th></tr></thead><tbody>
++    {% for f in group.list %}<tr><td>{{ f.name }}</td><td>{{ f.raw_value }}{% if f.normalized_value and f.normalized_value != f.raw_value %}<br><span class="text-muted small">Normalizado: {{ f.normalized_value }}</span>{% endif %}</td>
++    <td>{% if f.verification == 'verificada' %}<span class="chip chip-ok">✓ Verificada</span>{% else %}{{ f.verification }}{% endif %}{% if f.origin == 'manual' %} (v{{ f.version }}, a mano){% endif %}</td>
++    <td>{% if user.can_correct and f.raw_value != 'no encontrado' or user.can_correct and f.origin == 'agent' %}<form method="post" action="{% url 'correct_field' f.pk %}" class="d-flex gap-1">{% csrf_token %}<label class="visually-hidden" for="cf-{{ f.pk }}">Corregir {{ f.name }}</label><input id="cf-{{ f.pk }}" name="value" class="form-control form-control-sm" placeholder="Corregir valor"><button class="btn btn-sm btn-outline-primary">Guardar</button></form>{% endif %}</td></tr>{% endfor %}
++    </tbody></table></div></div>
++  </details>
++  {% empty %}<p class="text-muted">Sin datos extraídos todavía.</p>{% endfor %}
++</section>
++
++{# 5. Reglas. #}
++<section id="t5" aria-labelledby="h-rules" class="panel panel-pad mb-3">
++  <h2 class="h5" id="h-rules">Validación por reglas</h2>
++  <p class="text-muted small">Cada regla se evaluó contra su documento y su evidencia. Las marcadas como provisionales usan criterios aún por confirmar por el comité.</p>
++  <div class="table-responsive"><table class="table table-sm bg-white"><thead><tr><th scope="col">Regla</th><th scope="col">Resultado</th><th scope="col">Categoría</th><th scope="col">Detalle</th></tr></thead><tbody>
++  {% for r in rules %}<tr><td>{{ r.rule_id }}{% if r.provisional %} <span class="badge bg-warning text-dark">provisional</span>{% endif %}</td>
++  <td>{% if r.outcome == 'cumple' %}<span class="chip chip-ok">✓ Cumple</span>{% elif r.outcome == 'no_cumple' %}<span class="chip chip-missing">✕ No cumple</span>{% else %}<span class="chip chip-neutral">{{ r.outcome }}</span>{% endif %}</td>
++  <td>{{ r.category }}</td><td>{{ r.message }}</td></tr>{% empty %}<tr><td colspan="4" class="text-muted">Sin reglas evaluadas todavía.</td></tr>{% endfor %}
++  </tbody></table></div>
++</section>
++
++{# 6. Evidencia. #}
++<section id="t7" aria-labelledby="h-evidence" class="mb-3">
++  <h2 class="h5" id="h-evidence">Evidencia</h2>
++  <p class="text-muted small">La cita literal que sustenta cada dato. Al abrirla se muestra el PDF en la página exacta.</p>
++  {% for f in found_fields %}<div class="mb-3"><b>{{ f.doc_type }} · {{ f.name }}</b> — {{ f.verification }}<div class="quote">{{ f.quote }}</div><a href="{% url 'evidence_viewer' f.document_id %}?page={{ f.page|default:1 }}">Abrir PDF en p. {{ f.page }}</a></div>
++  {% empty %}<p class="text-muted">Sin evidencia registrada todavía.</p>{% endfor %}
++</section>
++
++{# 7. Bitácora, al final: es para la demostración, no para decidir. #}
++<details id="t8" class="panel mb-3">
++  <summary>Bitácora de agentes — qué hizo cada agente y en cuánto tiempo</summary>
++  <div class="panel-body"><div class="table-responsive"><table class="table table-sm bg-white"><thead><tr><th scope="col">Agente</th><th scope="col">Estado</th><th scope="col">Tiempo (ms)</th><th scope="col">Reintentos</th><th scope="col">Configuración</th><th scope="col">Error</th></tr></thead><tbody>
++  {% for r in runs %}<tr><td>{{ r.agent }}</td><td>{{ r.status }}</td><td>{{ r.duration_ms }}</td><td>{{ r.retries }}</td><td>{{ r.ruleset_version }}</td><td>{{ r.error }}</td></tr>{% empty %}<tr><td colspan="6" class="text-muted">Sin ejecuciones registradas.</td></tr>{% endfor %}
++  </tbody></table></div></div>
++</details>
++{% endblock %}
+--- a/dossier/dossier_ai/templates/evidence_viewer.html
++++ b/dossier/dossier_ai/templates/evidence_viewer.html
+@@ -1,4 +1,6 @@
+-{% extends "base.html" %}{% block content %}
+-<h5>{{ doc.original_name }} — página {{ page }}</h5>
++{% extends "base.html" %}{% block title %}Evidencia — {{ doc.original_name }}{% endblock %}{% block content %}
++<nav aria-label="Volver"><a href="{% url 'detail' doc.dossier_id %}">&larr; Volver al expediente</a></nav>
++<h1 class="h5 mt-2">{{ doc.original_name }} — página {{ page }}</h1>
++<p class="text-muted small">La cita de abajo es el fragmento exacto que sustenta el dato. El PDF se abre en la página citada.</p>
+ {% if quote %}<div class="quote mb-2">{{ quote }}</div>{% endif %}
+-<iframe src="{% url 'pdf_file' doc.pk %}#page={{ page }}" style="width:100%;height:80vh;border:1px solid #ccc"></iframe>{% endblock %}
++<iframe src="{% url 'pdf_file' doc.pk %}#page={{ page }}" title="PDF {{ doc.original_name }}, página {{ page }}" style="width:100%;height:80vh;border:1px solid #ccc"></iframe>{% endblock %}
+--- a/dossier/dossier_ai/templates/list.html
++++ b/dossier/dossier_ai/templates/list.html
+@@ -1,9 +1,13 @@
+-{% extends "base.html" %}{% block content %}
+-<h3>Expedientes</h3>
+-<form class="row g-2 mb-3" method="get">
+-<div class="col-auto"><input type="date" class="form-control" name="from" value="{{ f.from }}"></div>
+-<div class="col-auto"><input type="date" class="form-control" name="to" value="{{ f.to }}"></div>
+-<div class="col-auto"><select class="form-select" name="status"><option value="">Estado</option>{% for v,l in statuses %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+-<div class="col-auto"><select class="form-select" name="recommendation"><option value="">Recomendación</option><option value="cumple">Cumple</option><option value="requiere_revision">Requiere revisión</option><option value="no_cumple">No cumple</option></select></div>
+-<div class="col-auto"><button class="btn btn-accent">Filtrar</button></div></form>
+-<div class="panel px-3 pt-2">{% include "_table.html" %}</div>{% endblock %}
++{% extends "base.html" %}{% block title %}Expedientes{% endblock %}{% block content %}
++<h1 class="h3">Expedientes</h1>
++<p class="text-muted">Empiece por los que necesitan revisión: tienen documentos faltantes o inconsistencias. Los que cumplen van al final de la cola.</p>
++<form class="row g-2 mb-3 align-items-end" method="get" aria-label="Filtrar expedientes">
++<div class="col-auto"><label class="form-label small mb-1" for="f-from">Creado desde</label><input type="date" class="form-control" id="f-from" name="from" value="{{ f.from }}"></div>
++<div class="col-auto"><label class="form-label small mb-1" for="f-to">Creado hasta</label><input type="date" class="form-control" id="f-to" name="to" value="{{ f.to }}"></div>
++<div class="col-auto"><label class="form-label small mb-1" for="f-status">Estado</label><select class="form-select" id="f-status" name="status"><option value="">Todos</option>{% for v,l in statuses %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
++<div class="col-auto"><label class="form-label small mb-1" for="f-rec">Recomendación</label><select class="form-select" id="f-rec" name="recommendation"><option value="">Todas</option><option value="cumple" {% if f.recommendation == 'cumple' %}selected{% endif %}>Cumple</option><option value="requiere_revision" {% if f.recommendation == 'requiere_revision' %}selected{% endif %}>Requiere revisión</option><option value="no_cumple" {% if f.recommendation == 'no_cumple' %}selected{% endif %}>No cumple</option></select></div>
++<div class="col-auto"><button class="btn btn-accent">Filtrar</button> <a class="btn btn-outline-secondary" href="{% url 'list' %}">Limpiar filtros</a></div></form>
++<p class="small text-muted">{{ dossiers|length }} expediente(s) en esta vista.</p>
++<div class="panel px-3 pt-2">{% include "_table.html" %}</div>
++{% if not dossiers %}<p class="mt-3 mb-0">¿Aún no hay expedientes? <a href="{% url 'dashboard' %}">Cargue el primero desde el inicio</a>: solo necesita los PDF del inmueble.</p>{% endif %}
++{% endblock %}
+--- a/dossier/dossier_ai/templates/progress.html
++++ b/dossier/dossier_ai/templates/progress.html
+@@ -1,14 +1,23 @@
+-{% extends "base.html" %}{% block content %}
+-<h3>Progreso — {{ dossier.code }}</h3>
+-<div class="progress mb-3" style="height:24px"><div id="bar" class="progress-bar" style="width:{{ dossier.progress }}%">{{ dossier.progress }}%</div></div>
+-<p>Estado: <b id="status">{{ dossier.get_status_display }}</b> · Agente actual: <b id="stage">{{ dossier.current_stage }}</b></p>
+-<table class="table table-sm bg-white"><thead><tr><th>Agente</th><th>Estado</th><th>ms</th><th>Reintentos</th><th>Error</th></tr></thead><tbody id="runs">
+-{% for r in runs %}<tr><td>{{ r.agent }}</td><td>{{ r.status }}</td><td>{{ r.duration_ms }}</td><td>{{ r.retries }}</td><td>{{ r.error }}</td></tr>{% endfor %}</tbody></table>
+-<a class="btn btn-accent" href="{% url 'detail' dossier.pk %}">Ver detalle</a>{% endblock %}
++{% extends "base.html" %}{% block title %}Analizando {{ dossier.code }}{% endblock %}{% block content %}
++<ol class="steps" aria-label="Pasos del análisis">
++  <li class="done"><span class="n" aria-hidden="true">✓</span>Subir documentos</li>
++  <li class="current"><span class="n" aria-hidden="true">2</span>Análisis automático</li>
++  <li><span class="n" aria-hidden="true">3</span>Revisar el dictamen</li>
++</ol>
++<h1 class="h3">Analizando {{ dossier.code }}</h1>
++<p class="text-muted">No cierre esta página: cuando termine, se abrirá el dictamen solo. El análisis completo suele tardar unos minutos.</p>
++<div class="progress mb-2" style="height:24px" role="progressbar" aria-valuenow="{{ dossier.progress }}" aria-valuemin="0" aria-valuemax="100" aria-label="Progreso del análisis"><div id="bar" class="progress-bar" style="width:{{ dossier.progress }}%">{{ dossier.progress }}%</div></div>
++<p>Estado: <b id="status">{{ dossier.get_status_display }}</b> · Paso actual: <b id="stage">{{ dossier.current_stage }}</b></p>
++<p class="small text-muted">El sistema clasifica los PDF, extrae los datos con evidencia, valida las reglas y compara los documentos entre sí. Cada paso queda registrado abajo.</p>
++<h2 class="h5 mt-4">Qué está haciendo el sistema</h2>
++<table class="table table-sm bg-white"><thead><tr><th scope="col">Agente</th><th scope="col">Estado</th><th scope="col">Tiempo (ms)</th><th scope="col">Reintentos</th><th scope="col">Error</th></tr></thead><tbody id="runs">
++{% for r in runs %}<tr><td>{{ r.agent }}</td><td>{{ r.status }}</td><td>{{ r.duration_ms }}</td><td>{{ r.retries }}</td><td>{{ r.error }}</td></tr>{% empty %}<tr><td colspan="5" class="text-muted">Aún no hay pasos registrados.</td></tr>{% endfor %}</tbody></table>
++<a class="btn btn-accent" href="{% url 'detail' dossier.pk %}">Ver detalle del expediente</a>{% endblock %}
+ {% block scripts %}<script>
+ const url="{% url 'progress_json' dossier.pk %}";
+ async function tick(){const r=await fetch(url);const d=await r.json();
+  document.getElementById('bar').style.width=d.progress+'%';document.getElementById('bar').textContent=d.progress+'%';
++ document.getElementById('bar').parentElement.setAttribute('aria-valuenow',d.progress);
+  document.getElementById('status').textContent=d.status;document.getElementById('stage').textContent=d.stage;
+  const tb=document.getElementById('runs');tb.replaceChildren();
+  for(const x of d.runs){const tr=tb.insertRow();[x.agent,x.status,x.ms,x.retries,x.error].forEach(v=>{tr.insertCell().textContent=v});}
