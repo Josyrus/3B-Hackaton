@@ -1,4 +1,4 @@
-# Sistema Multiagente para Análisis Inteligente de Expedientes de Inmuebles
+# 3B Verify — Sistema Multiagente para Análisis de Expedientes de Inmuebles
 
 Aplicación Django que recibe PDF de un inmueble, los clasifica, extrae datos **con evidencia literal verificable**, los valida contra reglas
 externas (YAML), cruza la información entre documentos y emite una **recomendación inicial** (`cumple` / `requiere_revision` / `no_cumple`).
@@ -8,7 +8,7 @@ No es una decisión legal definitiva.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env && export $(grep -v '^#' .env | xargs)
+cp .env.example .env && set -a; source .env; set +a
 docker compose up -d                       # PostgreSQL + Redis
 python manage.py migrate
 python manage.py createsuperuser           # luego asigne el rol en /admin (legal_analyst | legal_supervisor | tech_admin)
@@ -17,11 +17,44 @@ celery -A config worker -l info            # en otra terminal
 ```
 Sin Docker: `DATABASE_URL=sqlite:///db.sqlite3 CELERY_EAGER=1 python manage.py runserver` ejecuta el análisis en el mismo proceso.
 
+### Requisitos del sistema
+- **Tesseract OCR** con idioma español (`apt install tesseract-ocr tesseract-ocr-spa`): necesario para PDF escaneados (`OCR_BACKEND=tesseract`).
+  Sin él, una página escaneada queda *ilegible* y el dictamen exige revisión humana (nunca inventa texto ni da "No cumple").
+- **Ollama** (opcional): `ollama pull qwen2.5:7b`; variables `LLM_MODEL`, `LLM_BASE_URL`, `LLM_NUM_CTX`, `NARRATIVE_BACKEND=llm` (resumen) y `EXTRACTOR_BACKEND=llm` (extracción). Temperatura 0 (`ChatOllama`).
+  El LLM solo extrae con cita literal y redacta el resumen; **no puede cambiar el veredicto**, que es determinista.
+- Reglas: `RULESET_FILE=rules/reglas_comite.json` (ESC-01, ESC-02, PRE-01, ALI-01, ALI-02, USO-01..03; tolerancia de superficie 5 %, similitud de texto 0.82)
+  o `rules/ruleset.yaml` (por defecto).
+
+## Verificar una carpeta sin Django
+```bash
+python verificar_carpeta.py                      # analiza los PDF/ZIP junto al script
+python verificar_carpeta.py RUTA --ocr tesseract --reglas rules/reglas_comite.json --json reporte.json
+```
+Código de salida: 0 cumple · 1 requiere revisión · 2 no cumple · 3 error/sin documentos.
+
 ## Pruebas y calidad
 ```bash
-pytest            # 57 pruebas (núcleo, agentes, seguridad, API, exportación)
+pytest tests/test_core.py tests/test_integracion.py   # núcleo, OCR real sobre escaneos, casos negativos, arquitectura (no requieren Django)
+pytest                                                # además tests/test_django.py (vistas, API, ZIP, permisos; requiere dependencias instaladas)
 ruff check .
 ```
+
+## Mapeo con la arquitectura LangGraph solicitada
+| Diseño solicitado (`ExpedienteState`) | Implementación (`DossierState`, `core/contracts.py`) |
+|---|---|
+| expediente_id / documentos | `dossier_id` / `documents` (PDF cargados en `apps/documents`, rutas_entrada = almacenamiento privado) |
+| documentos_faltantes / duplicados | `missing` / `duplicates` |
+| datos_extraidos | `fields` (cada campo con `Evidence` verificada) |
+| validaciones_reglas / discrepancias_cruzadas | `rules` / `discrepancies` |
+| dictamen / bitacora / alertas | `verdict` / `log` (`LogEntry`) / `warnings` |
+Cada nodo devuelve el estado completo, por lo que no se usan reducers (no hay escrituras concurrentes). Transición condicional tras
+clasificación/faltantes: si no hay documentos extraíbles se omiten extracción→cruzada y se pasa directo al dictamen (queda en la bitácora como `skipped`).
+
+## Limitaciones conocidas
+- Verificación de evidencia en páginas OCR es aproximada (≥85 % de cobertura) y estricta en texto nativo.
+- Un `No cumple` por OCR solo se emite con confianza OCR ≥ 85 y coincidencia exacta; en otro caso es `requiere_revision`.
+- Los criterios provisionales (marcados en las reglas) nunca producen `No cumple` por sí solos.
+- Las migraciones 0002 de `documents` y `validations` fueron escritas a mano: ejecute `python manage.py makemigrations --check` en su entorno.
 
 ## Arquitectura
 ```

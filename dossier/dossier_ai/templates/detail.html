@@ -1,39 +1,42 @@
-{% extends "base.html" %}{% block content %}
+{% extends "base.html" %}{% load labels %}{% block title %}{{ dossier.code }} · 3B Verify{% endblock %}{% block content %}
 <div class="d-flex justify-content-between align-items-center"><h3>{{ dossier.code }}</h3>
 <div>{% if verdict %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'pdf' %}">PDF</a> <a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'json' %}">JSON</a>{% endif %}
 {% if user.can_correct %}<form class="d-inline" method="post" action="{% url 'rerun' dossier.pk %}">{% csrf_token %}<button class="btn btn-sm btn-accent">Re-ejecutar validaciones</button></form>{% endif %}</div></div>
 <ul class="nav nav-tabs my-3" role="tablist">
-<li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#t1">Resumen y dictamen</a></li>
-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t2">Documentos</a></li>
+<li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#t2">Documentos</a></li>
 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t3">Clasificación</a></li>
 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t4">Información extraída</a></li>
 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t5">Reglas</a></li>
 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t6">Inconsistencias</a></li>
 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t7">Evidencia</a></li>
-<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t8">Bitácora</a></li></ul>
+<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t8">Bitácora</a></li>
+<li class="nav-item"><a class="nav-link fw-bold" data-bs-toggle="tab" href="#t1">Dictamen final</a></li></ul>
 <div class="tab-content">
-<div class="tab-pane fade show active" id="t1">{% if verdict %}
-<div class="panel panel-pad mb-3"><h4>Recomendación inicial: <span class="badge badge-{{ verdict.recommendation }}">{{ dossier.get_recommendation_label }}</span></h4>
-<p>Nivel de confianza global: <b>{{ verdict.confidence }}</b></p><p class="text-muted small">{{ payload.disclaimer }}</p>
-<h6>Justificación</h6><ul>{% for j in payload.justification %}<li>{{ j }}</li>{% endfor %}</ul>
-<h6>Requisitos cumplidos</h6><p>{{ payload.satisfied|join:", "|default:"—" }}</p><h6>Requisitos incumplidos</h6><p>{{ payload.unmet|join:", "|default:"—" }}</p>
-<h6>Documentos faltantes</h6><p>{{ payload.missing_documents|join:", "|default:"—" }}</p><h6>Inconsistencias</h6><ul>{% for i in payload.inconsistencies %}<li>{{ i }}</li>{% empty %}<li>—</li>{% endfor %}</ul></div>
-{% for w in warnings %}<div class="alert alert-warning py-1">{{ w }}</div>{% endfor %}
-{% else %}<div class="alert alert-info">Aún sin dictamen. <a href="{% url 'progress' dossier.pk %}">Ver progreso</a></div>{% endif %}</div>
-<div class="tab-pane fade" id="t2"><table class="table table-sm bg-white"><tr><th>Archivo</th><th>Estado</th><th>Páginas</th><th></th></tr>
-{% for d in documents %}<tr><td>{{ d.original_name }}</td><td>{{ d.get_status_display }} {{ d.status_detail }}</td><td>{{ d.page_count }}</td><td><a href="{% url 'evidence_viewer' d.pk %}">Abrir</a></td></tr>{% endfor %}</table>
-<p><b>Faltantes:</b> {{ payload.missing_documents|join:", "|default:"ninguno" }}</p></div>
-<div class="tab-pane fade" id="t3"><table class="table table-sm bg-white"><tr><th>Documento</th><th>Tipo</th><th>Certeza</th><th>Estado</th><th>Corregir</th></tr>
-{% for d in documents %}{% if d.classification %}<tr><td>{{ d.original_name }}</td><td>{{ d.classification.doc_type }}</td><td>{{ d.classification.confidence }}</td>
+<div class="tab-pane fade show active" id="t2">{% for w in warnings %}<div class="alert alert-warning py-1">{{ w }}</div>{% endfor %}<table class="table table-sm bg-white"><tr><th>Archivo</th><th>Estado</th><th>Páginas</th><th>Calidad de lectura</th><th></th></tr>
+{% for d in documents %}<tr><td>{{ d.original_name }}</td><td>{{ d.get_status_display }} {{ d.status_detail }}</td><td>{{ d.page_count }}</td><td>{% if d.ocr_avg is not None %}{{ d.ocr_avg|floatformat:0 }}%{% if d.ocr_avg < 65 %} <span class="text-danger">baja</span>{% endif %}{% else %}—{% endif %}</td><td><a href="{% url 'evidence_viewer' d.pk %}">Abrir</a></td></tr>{% endfor %}</table>
+<p><b>Faltantes:</b> {% for m in payload.missing_documents %}{{ m|label }}{% if not forloop.last %}, {% endif %}{% empty %}ninguno{% endfor %}</p></div>
+<div class="tab-pane fade" id="t3"><table class="table table-sm bg-white"><tr><th>Documento</th><th>Tipo</th><th>Estado</th><th>Corregir</th></tr>
+{% for d in documents %}{% if d.classification %}<tr><td>{{ d.original_name }}</td><td>{{ d.classification.doc_type|label }}</td>
 <td>{% if d.classification.manual %}manual{% elif d.classification.needs_review %}<span class="text-danger">revisión humana</span>{% else %}automática{% endif %}{% if d.classification.is_content_duplicate %} · duplicado de contenido{% endif %}</td>
-<td>{% if user.can_correct %}<form method="post" action="{% url 'correct_classification' d.pk %}" class="d-flex gap-1">{% csrf_token %}<select name="doc_type" class="form-select form-select-sm">{% for t in doc_types %}<option value="{{ t.value }}" {% if t.value == d.classification.doc_type %}selected{% endif %}>{{ t.value }}</option>{% endfor %}</select><button class="btn btn-sm btn-outline-primary">OK</button></form>{% endif %}</td></tr>{% endif %}{% endfor %}</table></div>
+<td>{% if user.can_correct %}<form method="post" action="{% url 'correct_classification' d.pk %}" class="d-flex gap-1">{% csrf_token %}<select name="doc_type" class="form-select form-select-sm">{% for t in doc_types %}<option value="{{ t.value }}" {% if t.value == d.classification.doc_type %}selected{% endif %}>{{ t.value|label }}</option>{% endfor %}</select><button class="btn btn-sm btn-outline-primary">OK</button></form>{% endif %}</td></tr>{% endif %}{% endfor %}</table></div>
 <div class="tab-pane fade" id="t4"><table class="table table-sm bg-white"><tr><th>Tipo</th><th>Campo</th><th>Valor</th><th>Normalizado</th><th>Verificación</th><th></th></tr>
-{% for f in fields %}<tr><td>{{ f.doc_type }}</td><td>{{ f.name }}</td><td>{{ f.raw_value }}</td><td class="text-muted">{{ f.normalized_value }}</td><td>{{ f.verification }}{% if f.origin == 'manual' %} (v{{ f.version }}){% endif %}</td>
+{% for f in fields %}<tr><td>{{ f.doc_type|label }}</td><td>{{ f.name|label }}</td><td>{{ f.raw_value }}</td><td class="text-muted">{{ f.normalized_value }}</td><td>{{ f.verification|label }}{% if f.origin == 'manual' %} (v{{ f.version }}){% endif %}</td>
 <td>{% if user.can_correct and f.raw_value != 'no encontrado' or user.can_correct and f.origin == 'agent' %}<form method="post" action="{% url 'correct_field' f.pk %}" class="d-flex gap-1">{% csrf_token %}<input name="value" class="form-control form-control-sm" placeholder="Corregir"><button class="btn btn-sm btn-outline-primary">OK</button></form>{% endif %}</td></tr>{% endfor %}</table></div>
-<div class="tab-pane fade" id="t5"><table class="table table-sm bg-white"><tr><th>Regla</th><th>Resultado</th><th>Categoría</th><th>Detalle</th></tr>
-{% for r in rules %}<tr><td>{{ r.rule_id }}{% if r.provisional %} <span class="badge bg-warning text-dark">provisional</span>{% endif %}</td><td>{{ r.outcome }}</td><td>{{ r.category }}</td><td>{{ r.message }}</td></tr>{% endfor %}</table></div>
-<div class="tab-pane fade" id="t6">{% for d in discrepancies %}<div class="panel mb-2"><div class="p-3"><b>{{ d.field }}</b> — {{ d.kind }}{% if d.kind == 'formato' %} (solo diferencia de formato){% endif %}<ul class="mb-0">{% for v in d.values %}<li>{{ v.doc_type }}: «{{ v.raw }}» <a href="{% url 'evidence_viewer' v.evidence.document_id %}?page={{ v.evidence.page }}">p. {{ v.evidence.page }}</a></li>{% endfor %}</ul></div></div>{% empty %}<p class="text-muted">Sin inconsistencias.</p>{% endfor %}</div>
-<div class="tab-pane fade" id="t7">{% for f in found_fields %}<div class="mb-3"><b>{{ f.doc_type }}.{{ f.name }}</b> — {{ f.verification }}<div class="quote">{{ f.quote }}</div><a href="{% url 'evidence_viewer' f.document_id %}?page={{ f.page|default:1 }}">Abrir PDF en p. {{ f.page }}</a></div>{% endfor %}</div>
+<div class="tab-pane fade" id="t5"><table class="table table-sm bg-white"><tr><th>Regla</th><th>Resultado</th><th>Severidad</th><th>Categoría</th><th>Detalle</th></tr>
+{% for r in rules %}<tr><td>{{ r.rule_id|label }}{% if r.provisional %} <span class="badge bg-warning text-dark">provisional</span>{% endif %}</td><td>{{ r.outcome|label }}</td><td>{{ r.severity|label }}</td><td>{{ r.category|label }}</td><td>{{ r.message|humanize }}</td></tr>{% endfor %}</table></div>
+<div class="tab-pane fade" id="t6">{% for d in discrepancies %}<div class="panel mb-2"><div class="p-3"><b>{{ d.field|label }}</b> — {{ d.kind|label }}<ul class="mb-0">{% for v in d.values %}<li>{{ v.doc_type|label }}: «{{ v.raw }}» <a href="{% url 'evidence_viewer' v.evidence.document_id %}?page={{ v.evidence.page }}">p. {{ v.evidence.page }}</a></li>{% endfor %}</ul></div></div>{% empty %}<p class="text-muted">Sin inconsistencias.</p>{% endfor %}</div>
+<div class="tab-pane fade" id="t7">{% for f in found_fields %}<div class="mb-3"><b>{{ f.doc_type|label }} · {{ f.name|label }}</b> — {{ f.verification|label }}<div class="quote">{{ f.quote }}</div><a href="{% url 'evidence_viewer' f.document_id %}?page={{ f.page|default:1 }}">Abrir PDF en p. {{ f.page }}</a></div>{% endfor %}</div>
 <div class="tab-pane fade" id="t8"><table class="table table-sm bg-white"><tr><th>Agente</th><th>Estado</th><th>ms</th><th>Reintentos</th><th>Config</th><th>Error</th></tr>
-{% for r in runs %}<tr><td>{{ r.agent }}</td><td>{{ r.status }}</td><td>{{ r.duration_ms }}</td><td>{{ r.retries }}</td><td>{{ r.ruleset_version }}</td><td>{{ r.error }}</td></tr>{% endfor %}</table></div>
+{% for r in runs %}<tr><td>{{ r.agent|agent_label }}</td><td>{{ r.status }}</td><td>{{ r.duration_ms }}</td><td>{{ r.retries }}</td><td>{{ r.ruleset_version }}</td><td>{{ r.error }}</td></tr>{% endfor %}</table></div>
+<div class="tab-pane fade" id="t1">{% if verdict %}
+<div class="panel panel-pad mb-3"><h4>Dictamen final: <span class="badge badge-{{ dossier.verdict_key }}">{{ dossier.get_recommendation_label }}</span></h4>
+{% if dossier.verdict_key == "cumple" %}<p class="mb-3">El expediente cumple con los requisitos evaluados.</p>
+{% else %}<p class="mb-3">El expediente no puede aprobarse con la información actual. Motivos:</p>
+<ul>{% for j in reasons %}<li>{{ j|humanize }}</li>{% empty %}<li>Requiere revisión de los documentos cargados.</li>{% endfor %}</ul>{% endif %}
+<h6>Requisitos cumplidos</h6><p>{{ payload.satisfied|humanize_list|join:", "|default:"—" }}</p>
+<h6>Requisitos incumplidos</h6><p>{{ payload.unmet|humanize_list|join:", "|default:"—" }}</p>
+<h6>Documentos faltantes</h6><p>{% for m in payload.missing_documents %}{{ m|label }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</p>
+<h6>Inconsistencias</h6><ul>{% for i in payload.inconsistencies %}<li>{{ i|humanize }}</li>{% empty %}<li>—</li>{% endfor %}</ul>
+<p class="text-muted small mb-0">{{ payload.disclaimer }}</p></div>
+{% else %}<div class="alert alert-info">Aún sin dictamen. <a href="{% url 'progress' dossier.pk %}">Ver progreso</a></div>{% endif %}</div>
 </div>{% endblock %}

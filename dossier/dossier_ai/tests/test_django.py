@@ -53,7 +53,7 @@ def test_full_flow_end_to_end(client, analyst):
     assert AgentRun.objects.filter(dossier=d, status="ok").count() == 8
     assert not d.fields.filter(is_current=True).exclude(verification__in=["verificada", "no_aplica"]).exists()
     page = client.get(reverse("detail", args=[d.pk]))
-    assert page.status_code == 200 and b"cumple" in page.content
+    assert page.status_code == 200 and b"Aprobado" in page.content and b"confianza" not in page.content.lower()
     assert client.get(reverse("dashboard")).status_code == 200
     assert client.get(reverse("progress_json", args=[d.pk])).json()["status"] == "analizado"
 
@@ -226,3 +226,28 @@ def test_inspect_pdf_command(tmp_path, capsys):
     call_command("inspect_pdf", str(p))
     out = capsys.readouterr().out
     assert "Clasificación: predial" in out and "predial.cuenta_predial" in out
+
+
+# ---- integración multiagente (añadido; requiere el entorno Django completo)
+def test_unrecognized_docs_skip_extraction_and_need_review(client, analyst):
+    r = post_files(client, [up("receta.pdf", make_pdf("Receta de cocina: harina, huevos"))])
+    assert r.status_code == 302
+    d = Dossier.objects.get()
+    assert d.status == "analizado" and d.recommendation == "requiere_revision"
+    assert not d.fields.exists()
+
+
+def test_detail_binary_verdict_friendly_names_and_brand(client, analyst):
+    full_upload(client)
+    d = Dossier.objects.get()
+    page = client.get(reverse("detail", args=[d.pk]))
+    assert page.status_code == 200 and b"Dictamen final" in page.content and b"3B" in page.content
+    assert b"confianza" not in page.content.lower()
+    assert b"uso_suelo.vigencia" not in page.content and b"uso_suelo.compatibilidad" not in page.content
+
+
+def test_not_approved_label_for_review(client, analyst):
+    post_files(client, [up("receta.pdf", make_pdf("Receta de cocina"))])
+    d = Dossier.objects.get()
+    assert b"No aprobado" in client.get(reverse("detail", args=[d.pk])).content
+    assert b"EXP-" in client.get(reverse("list"), {"recommendation": "no_aprobado"}).content

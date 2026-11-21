@@ -44,7 +44,13 @@ class Dossier(models.Model):
 
     @builtins.property
     def get_recommendation_label(self) -> str:
-        return {"cumple": "Cumple", "requiere_revision": "Requiere revisión", "no_cumple": "No cumple"}.get(self.recommendation, "")
+        from .labels import verdict_label
+        return verdict_label(self.recommendation)
+
+    @builtins.property
+    def verdict_key(self) -> str:
+        """Clave visual binaria: 'cumple' (Aprobado) o 'no_cumple' (No aprobado); vacío si aún no hay dictamen."""
+        return "" if not self.recommendation else ("cumple" if self.recommendation == "cumple" else "no_cumple")
 
     def __str__(self) -> str:
         return self.code

@@ -25,6 +25,9 @@ class DocumentPage(models.Model):
     document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="pages")
     number = models.PositiveIntegerField()
     text = models.TextField(blank=True)
+    method = models.CharField(max_length=10, default="native")   # native | ocr
+    ocr_confidence = models.FloatField(default=100.0)            # 0-100; 100 para texto digital
+    is_blank = models.BooleanField(default=False)
 
     class Meta:
         unique_together = [("document", "number")]

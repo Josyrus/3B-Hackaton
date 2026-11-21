@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count
+from django.db.models import Avg, Count
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -13,6 +13,7 @@ from apps.documents.services import UploadRejected, expand_uploads
 from apps.findings.models import ExtractedField
 from core.contracts import DocumentType
 from . import specs
+from .labels import AGENTS
 from .models import Dossier, DossierStatus
 from .services import DossierAnalysisFacade
 
@@ -20,8 +21,9 @@ from .services import DossierAnalysisFacade
 def _home_context() -> dict:
     qs = Dossier.objects
     total = qs.count()
-    labels = {"cumple": "Cumple", "requiere_revision": "Requiere revisión", "no_cumple": "No cumple"}
-    counts = {r["recommendation"]: r["n"] for r in qs.exclude(recommendation="").values("recommendation").annotate(n=Count("id"))}
+    labels = {"cumple": "Aprobado", "no_cumple": "No aprobado"}
+    raw = {r["recommendation"]: r["n"] for r in qs.exclude(recommendation="").values("recommendation").annotate(n=Count("id"))}
+    counts = {"cumple": raw.get("cumple", 0), "no_cumple": sum(n for k, n in raw.items() if k != "cumple")}
     judged = sum(counts.values())
     return {
         "total": total,
@@ -77,8 +79,13 @@ def progress(request, pk):
 @login_required
 def progress_json(request, pk):
     d = get_object_or_404(Dossier, pk=pk)
-    runs = [{"agent": r.agent, "status": r.status, "ms": r.duration_ms, "retries": r.retries, "error": r.error} for r in d.agent_runs.all()]
+    runs = [{"agent": AGENTS.get(r.agent, r.agent), "status": r.status, "ms": r.duration_ms, "retries": r.retries, "error": r.error} for r in d.agent_runs.all()]
     return JsonResponse({"status": d.status, "progress": d.progress, "stage": d.current_stage, "runs": runs})
+
+
+def _reasons(payload: dict) -> list[str]:
+    """Motivos mostrados en el dictamen final. Se omiten las líneas de 'confianza' (métrica interna que ya no se muestra)."""
+    return [j for j in payload.get("justification", []) if "confianza" not in j.lower()]
 
 
 @login_required
@@ -86,7 +93,7 @@ def detail(request, pk):
     d = get_object_or_404(Dossier.objects.select_related("property"), pk=pk)
     verdict = d.verdicts.first()
     payload = verdict.payload if verdict else {}
-    docs = d.documents.select_related("classification")
+    docs = d.documents.select_related("classification").annotate(ocr_avg=Avg("pages__ocr_confidence"))
     fields = d.fields.filter(is_current=True, origin__in=["agent", "manual"]).select_related("document")
     ctx = {
         "dossier": d, "verdict": verdict, "payload": payload, "documents": docs,
@@ -94,6 +101,7 @@ def detail(request, pk):
         "found_fields": [f for f in fields if f.raw_value != "no encontrado"],
         "rules": d.rule_results.all(), "discrepancies": d.discrepancies.all(), "runs": d.agent_runs.all(),
         "warnings": payload.get("warnings", []),
+        "reasons": _reasons(payload),
     }
     return render(request, "detail.html", ctx)
 

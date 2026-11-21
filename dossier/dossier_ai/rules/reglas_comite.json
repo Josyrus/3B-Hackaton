@@ -1,0 +1,73 @@
+{
+  "version": "1.1-comite",
+  "tolerancia_superficie_porcentaje": 5.0,
+  "umbral_similitud_texto": 0.82,
+  "umbral_ocr_para_incumplimiento": 85.0,
+  "reglas_por_tipo": {
+    "Escrituras": [
+      {
+        "id": "ESC-01",
+        "campo": "titular",
+        "operador": "obligatorio",
+        "severidad_fallo": "critico",
+        "descripcion": "Debe existir un titular o propietario identificado en la escritura."
+      },
+      {
+        "id": "ESC-02",
+        "campo": "superficie_terreno_m2",
+        "operador": "mayor_que",
+        "valor": 0,
+        "severidad_fallo": "critico",
+        "descripcion": "La superficie del terreno debe estar especificada y ser mayor a 0 m²."
+      }
+    ],
+    "Predial": [
+      {
+        "id": "PRE-01",
+        "campo": "cuenta_o_clave_predial",
+        "operador": "obligatorio",
+        "severidad_fallo": "critico",
+        "descripcion": "Debe contar con número de cuenta predial o clave catastral."
+      }
+    ],
+    "Alineamiento y Número Oficial": [
+      {
+        "id": "ALI-01",
+        "campo": "numero_oficial",
+        "operador": "obligatorio",
+        "severidad_fallo": "relevante",
+        "descripcion": "El documento debe asignar o ratificar un número oficial."
+      },
+      {
+        "id": "ALI-02",
+        "campo": "vigencia",
+        "operador": "vigente_a_fecha_actual",
+        "severidad_fallo": "relevante",
+        "descripcion": "La constancia de alineamiento no debe estar vencida (si especifica plazo)."
+      }
+    ],
+    "Uso de Suelo": [
+      {
+        "id": "USO-01",
+        "campo": "compatibilidad_comercial",
+        "operador": "es_verdadero",
+        "severidad_fallo": "critico",
+        "descripcion": "El uso de suelo debe ser compatible con actividad comercial / tienda."
+      },
+      {
+        "id": "USO-02",
+        "campo": "vigencia",
+        "operador": "vigente_a_fecha_actual",
+        "severidad_fallo": "critico",
+        "descripcion": "El certificado de uso de suelo debe encontrarse vigente."
+      },
+      {
+        "id": "USO-03",
+        "campo": "restricciones_condicionantes",
+        "operador": "reportar_si_existe",
+        "severidad_fallo": "relevante",
+        "descripcion": "Identificar restricciones o condicionantes urbanísticas que afecten la operación."
+      }
+    ]
+  }
+}

@@ -65,8 +65,14 @@ def test_owner_discrepancy_is_review_not_fail():
     assert any(d.field == "propietario" and d.kind == "real" for d in s.discrepancies)
     assert s.verdict.recommendation == Recommendation.REVIEW
 
-def test_surface_incompatible_pending_tolerance_is_review():
+def test_surface_beyond_tolerance_is_real_discrepancy_and_review():
     s = run(full_inputs(predial=DOCS["predial"].replace("200.00", "350.00")))
+    assert any(d.field == "superficie" and d.kind == "real" and d.critical for d in s.discrepancies)
+    assert s.verdict.recommendation == Recommendation.REVIEW
+
+def test_surface_pending_tolerance_when_not_configured_is_review():
+    rs = RS.model_copy(deep=True); rs.thresholds.surface_tolerance_pct = None
+    s = Supervisor(rs).run(DossierState(dossier_id=1, reference_date=TODAY, documents=full_inputs(predial=DOCS["predial"].replace("200.00", "350.00"))))
     assert any(d.field == "superficie" and d.kind == "tolerancia_pendiente" for d in s.discrepancies)
     assert s.verdict.recommendation == Recommendation.REVIEW
 
@@ -86,7 +92,7 @@ def test_expired_document_is_no_cumple():
     assert any(r.category == "vigencia" and r.outcome == Outcome.FAIL for r in s.rules)
 
 def test_unparseable_validity_is_indeterminate_review():
-    s = run(full_inputs(alineamiento=DOCS["alineamiento"].replace("01/02/2027", "un año")))
+    s = run(full_inputs(alineamiento=DOCS["alineamiento"].replace("01/02/2027", "según dictamen técnico")))
     assert s.verdict.recommendation == Recommendation.REVIEW
 
 def test_unrecognized_document_flagged():

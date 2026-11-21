@@ -18,7 +18,13 @@ class Spec:
 
 
 def status_is(v: str) -> Spec: return Spec(Q(status=v))
-def recommendation_is(v: str) -> Spec: return Spec(Q(recommendation=v))
+def recommendation_is(v: str) -> Spec:
+    """'aprobado' = cumple; 'no_aprobado' = cualquier dictamen distinto de cumple (los valores internos siguen aceptándose)."""
+    if v == "aprobado":
+        return Spec(Q(recommendation="cumple"))
+    if v == "no_aprobado":
+        return Spec(~Q(recommendation="cumple") & ~Q(recommendation=""))
+    return Spec(Q(recommendation=v))
 def created_from(d: date) -> Spec: return Spec(Q(created_at__date__gte=d))
 def created_to(d: date) -> Spec: return Spec(Q(created_at__date__lte=d))
 def all_dossiers() -> Spec: return Spec(Q())

@@ -19,6 +19,7 @@ class RuleResult(models.Model):
     doc_type = models.CharField(max_length=20, blank=True)
     outcome = models.CharField(max_length=15)
     category = models.CharField(max_length=20)
+    severity = models.CharField(max_length=12, default="relevante")  # critico | relevante | informativo
     provisional = models.BooleanField(default=False)
     message = models.TextField(blank=True)
     evidence = models.JSONField(default=list)

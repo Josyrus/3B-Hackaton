@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import stat
 import uuid
 import zipfile
 from dataclasses import dataclass, field
@@ -13,6 +14,9 @@ from django.db import transaction
 
 from core.ports import OCRPort, PDFCorruptError, PyMuPDFExtractor
 from .models import Classification, DocStatus, Document, DocumentPage
+
+
+MAX_COMPRESSION_RATIO = 200  # ratio descomprimido/comprimido a partir del cual un miembro se considera zip bomb
 
 
 class UploadRejected(ValueError):
@@ -34,7 +38,7 @@ class IngestReport:
 def get_ocr() -> OCRPort | None:
     if settings.OCR_BACKEND == "tesseract":
         from core.ports import TesseractOCR
-        return TesseractOCR()
+        return TesseractOCR(lang=getattr(settings, "OCR_LANG", "spa"))
     return None
 
 
@@ -75,6 +79,7 @@ def _expand_zip(name: str, data: bytes) -> list[UploadItem]:
         raise UploadRejected("El ZIP contiene demasiados archivos.")
     if sum(i.file_size for i in infos) > settings.MAX_ZIP_UNCOMPRESSED_MB * 1024 * 1024:
         raise UploadRejected("El ZIP excede el tamaño descomprimido permitido (posible zip bomb).")
+    limit = settings.MAX_UPLOAD_MB * 1024 * 1024
     out: list[UploadItem] = []
     for info in infos:
         parts = PurePosixPath(info.filename.replace("\\", "/")).parts
@@ -82,9 +87,21 @@ def _expand_zip(name: str, data: bytes) -> list[UploadItem]:
             raise UploadRejected("El ZIP contiene rutas inseguras (path traversal).")
         if parts and parts[0] == "__MACOSX":
             continue
+        if stat.S_ISLNK((info.external_attr >> 16) & 0xFFFF):
+            raise UploadRejected(f"El ZIP contiene un enlace simbólico: '{safe_name(info.filename)}'.")
+        if info.flag_bits & 0x1:
+            raise UploadRejected(f"'{safe_name(info.filename)}' dentro del ZIP está cifrado con contraseña.")
         if not info.filename.lower().endswith(".pdf"):
             raise UploadRejected(f"El ZIP contiene un archivo que no es PDF: '{safe_name(info.filename)}'.")
-        content = zf.read(info)
+        if info.file_size > limit:
+            raise UploadRejected(f"'{safe_name(info.filename)}' dentro del ZIP excede el límite de {settings.MAX_UPLOAD_MB} MB.")
+        if info.compress_size and info.file_size > 1024 * 1024 and info.file_size / info.compress_size > MAX_COMPRESSION_RATIO:
+            raise UploadRejected(f"Ratio de compresión sospechoso en '{safe_name(info.filename)}' (posible zip bomb).")
+        try:
+            content = zf.read(info)
+        except (zipfile.BadZipFile, RuntimeError, NotImplementedError, EOFError, OSError, ValueError) as exc:
+            # CRC inválido, miembro cifrado/truncado o compresión no soportada: se rechaza con mensaje, nunca un error 500
+            raise UploadRejected(f"No se pudo leer '{safe_name(info.filename)}' del ZIP ({type(exc).__name__}).") from exc
         if not content.startswith(b"%PDF"):
             raise UploadRejected(f"'{safe_name(info.filename)}' dentro del ZIP no es un PDF válido.")
         out.append(UploadItem(safe_name(info.filename), content))
@@ -111,7 +128,10 @@ def read_private(doc: Document) -> bytes:
 def ingest_items(dossier, items: list[UploadItem]) -> IngestReport:
     """Persiste cada PDF: detecta duplicados exactos y archivos corruptos; extrae texto por página."""
     report = IngestReport()
-    extractor = PyMuPDFExtractor(ocr=get_ocr())
+    ocr = get_ocr()
+    if ocr is not None and hasattr(ocr, "language_warning") and (warning := ocr.language_warning()):
+        report.messages.append(f"OCR: {warning}")
+    extractor = PyMuPDFExtractor(ocr=ocr)
     seen = set(Document.objects.filter(dossier=dossier).values_list("sha256", flat=True))
     for item in items:
         digest = hashlib.sha256(item.data).hexdigest()
@@ -134,6 +154,10 @@ def ingest_items(dossier, items: list[UploadItem]) -> IngestReport:
             continue
         doc.page_count = len(pages)
         doc.save()
-        DocumentPage.objects.bulk_create(DocumentPage(document=doc, number=p.page, text=p.text) for p in pages)
+        DocumentPage.objects.bulk_create(DocumentPage(document=doc, number=p.page, text=p.text, method=p.method,
+                                                      ocr_confidence=p.ocr_confidence, is_blank=p.blank) for p in pages)
+        low = [p.page for p in pages if not p.blank and p.ocr_confidence < extractor.ocr_min_confidence]
+        if low:
+            report.messages.append(f"{item.name}: lectura de baja calidad (OCR) en las páginas {low}; se recomienda revisar el original.")
         report.created.append(doc)
     return report

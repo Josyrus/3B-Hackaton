@@ -47,6 +47,9 @@ class Verification(StrEnum):
 class PageText(BaseModel):
     page: int = Field(ge=1)
     text: str = ""
+    method: str = "native"          # native | ocr
+    ocr_confidence: float = 100.0   # 0-100; 100 para texto digital
+    blank: bool = False             # página sin contenido (no penaliza la confianza)
 
 
 class DocumentInput(BaseModel):
@@ -60,6 +63,9 @@ class Evidence(BaseModel):
     page: int | None = None
     quote: str = ""
     verification: Verification = Verification.PENDING
+    ocr_confidence: float | None = None  # confianza OCR de la página citada (None = sin verificar / digital)
+    exact_match: bool = True             # False si la cita solo coincide de forma aproximada (OCR)
+    detail: str = ""                     # motivo de la verificación o del rechazo
 
 
 class FieldValue(BaseModel):
@@ -89,6 +95,7 @@ class RuleOutcome(BaseModel):
     outcome: Outcome
     provisional: bool = False
     category: str = "requisito"  # requisito | vigencia | restriccion | completitud
+    severity: str = "relevante"  # critico | relevante | informativo (severidad si la regla no se cumple)
     message: str = ""
     evidence: list[Evidence] = Field(default_factory=list)
 
@@ -98,11 +105,16 @@ class Discrepancy(BaseModel):
     kind: str  # formato | real | tolerancia_pendiente
     critical: bool = False
     values: list[dict] = Field(default_factory=list)  # {doc_type, raw, normalized, evidence}
+    possible_different_property: bool = False  # varias discrepancias reales: ¿mezcla de inmuebles?
 
 
 class VerdictResult(BaseModel):
     recommendation: Recommendation
     confidence: float
+    confidence_level: str = "baja"          # alta | media | baja
+    confidence_explanation: str = ""
+    executive_summary: str = ""             # redactado por el LLM (opcional) o por plantilla; NO decide el veredicto
+    requires_human_review: bool = True
     justification: list[str]
     satisfied: list[str] = Field(default_factory=list)
     unmet: list[str] = Field(default_factory=list)
@@ -110,6 +122,16 @@ class VerdictResult(BaseModel):
     inconsistencies: list[str] = Field(default_factory=list)
     evidence_refs: list[Evidence] = Field(default_factory=list)
     disclaimer: str = ("Recomendación inicial automatizada; no constituye una decisión legal definitiva.")
+
+
+class LogEntry(BaseModel):
+    """Bitácora en memoria de una ejecución de agente (la persistente vive en AgentRun)."""
+    agent: str
+    stage: str
+    status: str = "ok"          # ok | warning | error | skipped
+    duration_ms: int = 0
+    retries: int = 0
+    summary: str = ""
 
 
 class DossierState(BaseModel):
@@ -126,3 +148,4 @@ class DossierState(BaseModel):
     discrepancies: list[Discrepancy] = Field(default_factory=list)
     verdict: VerdictResult | None = None
     warnings: list[str] = Field(default_factory=list)
+    log: list[LogEntry] = Field(default_factory=list)

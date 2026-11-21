@@ -11,7 +11,7 @@ from .. import normalization as nz
 from ..contracts import (NOT_FOUND, REQUIRED_TYPES, Classification, Discrepancy, DocumentInput, DocumentType,
                          DossierState, Evidence, FieldValue, Outcome, Recommendation, RuleOutcome,
                          VerdictResult, Verification)
-from ..evidence import verify_evidence
+from ..evidence import quote_coverage, verify_evidence
 from ..ports import LLMPort
 from ..rules import RuleContext, RuleSet, evaluate_rule, pick_field
 from .base import Agent
@@ -67,6 +67,12 @@ def _doc_text(doc: DocumentInput) -> str:
     return "\n".join(p.text for p in doc.pages)
 
 
+def doc_ocr_confidence(doc: DocumentInput) -> float:
+    """Confianza media (0-100) de las páginas no vacías del documento; 100 si todo es texto digital; 0 si no hay texto."""
+    pages = [p for p in doc.pages if not p.blank]
+    return round(sum(p.ocr_confidence for p in pages) / len(pages), 2) if pages else 0.0
+
+
 # ---------- 1. Ingesta -------------------------------------------------------------------
 class IngestAgent(Agent):
     name, stage = "ingesta", "ingest"
@@ -74,10 +80,15 @@ class IngestAgent(Agent):
     def run(self, state: DossierState) -> IngestOut:
         seen: dict[str, int] = {}
         out = IngestOut()
+        min_conf = self.ruleset.thresholds.ocr_min_confidence
         for d in state.documents:
-            text = nz.normalize_text(_doc_text(d))
+            text = nz.compact_text(_doc_text(d))   # insensible a saltos de línea/signos: detecta PDFs re-guardados
             if len(text) < 20:
                 out.warnings.append(f"Documento {d.name}: sin texto legible (posible escaneo sin OCR).")
+            else:
+                low = [p.page for p in d.pages if not p.blank and p.method == "ocr" and p.ocr_confidence < min_conf]
+                if low:
+                    out.warnings.append(f"Documento {d.name}: lectura OCR de baja calidad en las páginas {low}; revisar el original.")
             digest = hashlib.sha256(text.encode()).hexdigest()
             if len(text) >= 20 and digest in seen:
                 out.duplicates.append(d.id)
@@ -99,8 +110,10 @@ class ClassifierAgent(Agent):
         for doc in state.documents:
             if doc.id in manual:
                 continue
-            text = nz.normalize_text("\n".join(p.text for p in doc.pages[:3]))
-            hits = {t: sum(1 for k in kws if nz.normalize_text(k) in text)
+            head = doc.pages[:3]
+            text = nz.normalize_text("\n".join(p.text for p in head))
+            fuzzy = any(p.method == "ocr" for p in head)   # el OCR confunde letras: se tolera en palabras clave largas
+            hits = {t: sum(1 for k in kws if self._keyword_hit(k, text, fuzzy))
                     for t, kws in self.ruleset.classification_keywords.items()}
             ranked = sorted(hits.items(), key=lambda kv: kv[1], reverse=True)
             best, n = ranked[0]
@@ -111,9 +124,17 @@ class ClassifierAgent(Agent):
             conf = min(1.0, 0.4 + 0.2 * n)
             if len(ranked) > 1 and ranked[1][1] >= n:
                 conf *= 0.6  # ambigüedad entre tipos
+            low_ocr = doc_ocr_confidence(doc) < self.ruleset.thresholds.ocr_min_confidence  # lectura dudosa: nunca se da por buena
             result.append(Classification(document_id=doc.id, doc_type=best, confidence=round(conf, 2),
-                                         needs_review=conf < thr))
+                                         needs_review=conf < thr or low_ocr))
         return ClassifyOut(classifications=result)
+
+    @staticmethod
+    def _keyword_hit(keyword: str, text: str, fuzzy: bool) -> bool:
+        k = nz.normalize_text(keyword)
+        if k in text:
+            return True
+        return fuzzy and len(nz.compact_text(k)) >= 8 and quote_coverage(k, text) >= 0.88
 
 
 # ---------- 3. Faltantes -------------------------------------------------------------------
@@ -269,9 +290,9 @@ class EvidenceVerifierAgent(Agent):
         out, warnings = [], []
         for f in state.fields:
             if f.found:
-                ev = verify_evidence(f.evidence, docs)
+                ev = verify_evidence(f.evidence, docs, f.raw, field_kind(f.name))
                 if ev.verification == Verification.UNVERIFIED:
-                    warnings.append(f"Cita no verificada: {f.doc_type.value}.{f.name}")
+                    warnings.append(f"Cita no verificada: {f.doc_type.value}.{f.name}" + (f" ({ev.detail})" if ev.detail else ""))
                 f = f.model_copy(update={"evidence": ev})
             out.append(f)
         return FieldsOut(fields=out, warnings=warnings)
@@ -283,7 +304,8 @@ class RuleValidatorAgent(Agent):
 
     def run(self, state: DossierState) -> RulesOut:
         present = {c.doc_type for c in state.classifications}
-        ctx = RuleContext(reference_date=state.reference_date)
+        ctx = RuleContext(reference_date=state.reference_date, fields=state.fields,
+                          ocr_min_confidence_for_fail=self.ruleset.thresholds.ocr_min_confidence_for_fail)
         results = []
         for rule in self.ruleset.rules:
             if rule.doc_type not in present:
@@ -294,12 +316,45 @@ class RuleValidatorAgent(Agent):
 
 
 # ---------- 7. Validación cruzada -------------------------------------------------------------------
+def _ratio(a: str, b: str) -> float:
+    from difflib import SequenceMatcher
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def _token_overlap(small: list[str], big: list[str]) -> float:
+    """Fracción de tokens de `small` presentes (con tolerancia a errores de OCR) en `big`."""
+    return sum(1 for t in small if any(t == o or _ratio(t, o) >= 0.85 for o in big)) / len(small) if small else 0.0
+
+
+def equivalent(kind: str, a: str, b: str, similarity: float) -> bool:
+    """¿Dos valores normalizados designan lo mismo? Tolera datos extra (CP, alcaldía), orden de apellidos,
+    coproprietarios y ruido de OCR; los números exteriores distintos SÍ son una discrepancia."""
+    if a == b:
+        return True
+    ta, tb = a.split(), b.split()
+    if not ta or not tb:
+        return False
+    if kind == "address":
+        da, db = {t for t in ta if t.isdigit()}, {t for t in tb if t.isdigit()}
+        if da and db and da.isdisjoint(db):
+            return False
+        small, big = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
+        return _ratio(a, b) >= similarity or _token_overlap(small, big) >= 0.7
+    if kind == "name":
+        small, big = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
+        return (len(small) >= 2 and _token_overlap(small, big) >= 0.8) or _ratio(a, b) >= similarity
+    if kind == "identifier":
+        short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+        return len(short) >= 3 and short in long_
+    return False
+
+
 class CrossValidationAgent(Agent):
     name, stage = "validacion_cruzada", "cross"
 
     def run(self, state: DossierState) -> CrossOut:
         out: list[Discrepancy] = []
-        tol = self.ruleset.thresholds.surface_tolerance_pct
+        th = self.ruleset.thresholds
         for chk in self.ruleset.cross_checks:
             vals = []
             for s in chk.sources:
@@ -309,13 +364,20 @@ class CrossValidationAgent(Agent):
                                  "normalized": fv.normalized, "evidence": fv.evidence.model_dump(mode="json")})
             if len(vals) < 2:
                 continue
-            d = self._compare(chk.field, chk.kind, vals, tol)
+            d = self._compare(chk.field, chk.kind, vals, th.surface_tolerance_pct, th.text_similarity)
             if d:
                 out.append(d)
+        # Varias discrepancias reales en dirección / titular / identificación del predio: posible mezcla de inmuebles.
+        identity = [d for d in out if d.kind == "real" and d.field in ("direccion", "propietario", "identificacion_predio")]
+        if len(identity) >= 2:
+            for d in identity:
+                d.possible_different_property = True
         return CrossOut(discrepancies=out)
 
     @staticmethod
-    def _compare(field: str, kind: str, vals: list[dict], tol: float | None) -> Discrepancy | None:
+    def _compare(field: str, kind: str, vals: list[dict], tol: float | None, similarity: float = 0.82) -> Discrepancy | None:
+        if kind == "number_in_address":
+            return CrossValidationAgent._compare_number(field, vals)
         if kind == "area":
             areas = [nz.parse_area_m2(v["raw"]) for v in vals]
             if any(a is None for a in areas):
@@ -328,36 +390,91 @@ class CrossValidationAgent(Agent):
             if hi and (hi - lo) / hi * 100 <= tol:
                 return Discrepancy(field=field, kind="formato", values=vals)
             return Discrepancy(field=field, kind="real", critical=True, values=vals)
-        if len({v["normalized"] for v in vals}) == 1:
-            return Discrepancy(field=field, kind="formato", values=vals) if len({v["raw"] for v in vals}) > 1 else None
-        return Discrepancy(field=field, kind="real", critical=True, values=vals)
+        conflict = any(not equivalent(kind, vals[i]["normalized"], vals[j]["normalized"], similarity)
+                       for i in range(len(vals)) for j in range(i + 1, len(vals)))
+        if conflict:
+            return Discrepancy(field=field, kind="real", critical=True, values=vals)
+        return Discrepancy(field=field, kind="formato", values=vals) if len({v["raw"] for v in vals}) > 1 else None
+
+    @staticmethod
+    def _compare_number(field: str, vals: list[dict]) -> Discrepancy | None:
+        """El número oficial (primera fuente) debe aparecer en las direcciones que traigan algún número.
+        No es crítica: el documento puede ratificar/actualizar un número anterior."""
+        number = nz.normalize_identifier(vals[0]["raw"])
+        addresses = [v for v in vals[1:] if any(t.isdigit() for t in v["normalized"].split())]
+        if not number or not addresses:
+            return None
+        if any(number in {nz.normalize_identifier(t) for t in v["normalized"].split()} for v in addresses):
+            return None
+        return Discrepancy(field=field, kind="real", critical=False, values=[vals[0]] + addresses)
 
 
 # ---------- 8. Dictaminador ---------------------------------------------------------------------------
+NARRATIVE_SYSTEM = (
+    "Eres el Agente Dictaminador del equipo legal inmobiliario. Redacta un resumen ejecutivo claro y breve (máx. 6 oraciones) "
+    "sobre una recomendación YA CALCULADA por reglas deterministas. NO cambies ni cuestiones la recomendación. Cita únicamente los "
+    "hallazgos proporcionados (documento y, si se da, página); no inventes datos. Responde SOLO JSON: {\"resumen\": \"...\"}.")
+
+_LABELS = {Recommendation.PASS: "cumple", Recommendation.REVIEW: "requiere revisión", Recommendation.FAIL: "no cumple"}
+
+
+class NarrativeOut(BaseModel):
+    resumen: str = Field(min_length=20, max_length=2500)
+
+
+def template_summary(rec: Recommendation, confidence: float, level: str, just: list[str]) -> str:
+    """Resumen determinista (respaldo si no hay LLM o si el LLM falla / contradice el veredicto)."""
+    head = f"Recomendación inicial: {_LABELS[rec].upper()} (confianza {level}, {confidence:.0%}). "
+    body = " ".join(just[:4])
+    extra = f" (+{len(just) - 4} hallazgo(s) más)" if len(just) > 4 else ""
+    return head + body + extra
+
+
+def summary_contradicts(summary: str, rec: Recommendation) -> bool:
+    """El LLM no puede afirmar un veredicto distinto al calculado. 'No cumple' puede aparecer legítimamente al hablar de una
+    regla, pero ante la duda se descarta el texto del LLM y se usa la plantilla (siempre es seguro)."""
+    low = nz.normalize_text(summary)
+    return any(nz.normalize_text(lbl) in low for r, lbl in _LABELS.items() if r != rec)
+
+
 class VerdictAgent(Agent):
     name, stage = "dictaminador", "verdict"
 
+    def __init__(self, ruleset: RuleSet, narrator: LLMPort | None = None) -> None:
+        super().__init__(ruleset)
+        self.narrator = narrator
+
     def run(self, state: DossierState) -> VerdictResult:
-        thr = self.ruleset.thresholds.verdict_min_confidence
+        th = self.ruleset.thresholds
+        thr = th.verdict_min_confidence
         found = [f for f in state.fields if f.found]
         trusted = [f for f in found if f.evidence.verification.is_trusted]
         cls = [c for c in state.classifications if c.doc_type != DocumentType.NO_RECONOCIDO]
         determinate = [r for r in state.rules if r.outcome != Outcome.INDETERMINATE]
-        confidence = round(min(
-            sum(c.confidence for c in cls) / len(cls) if cls else 0.0,
-            len(trusted) / len(found) if found else 0.0,
-            len(determinate) / len(state.rules) if state.rules else 0.0), 2)
+        used = {c.document_id for c in cls}
+        ocr_docs = [doc_ocr_confidence(d) / 100.0 for d in state.documents if d.id in used]
+        parts = {
+            "clasificación": sum(c.confidence for c in cls) / len(cls) if cls else 0.0,
+            "evidencias verificadas": len(trusted) / len(found) if found else 0.0,
+            "reglas determinadas": len(determinate) / len(state.rules) if state.rules else 0.0,
+            "calidad de lectura (OCR)": sum(ocr_docs) / len(ocr_docs) if ocr_docs else 0.0,
+        }
+        confidence = round(min(parts.values()), 2)
+        level = "alta" if confidence >= 0.85 else "media" if confidence >= 0.65 else "baja"
+        explanation = "Confianza = mínimo de: " + "; ".join(f"{k} {v:.0%}" for k, v in parts.items()) + "."
 
         review: list[str] = []
         missing = [t.value for t in state.missing]
         if missing:
             review.append(f"Documentos faltantes: {', '.join(missing)}.")
-        review += [f"Clasificación de baja certeza en documento {c.document_id}." for c in state.classifications if c.needs_review]
+        names = {d.id: d.name for d in state.documents}
+        review += [f"Clasificación de baja certeza o lectura dudosa en '{names.get(c.document_id, c.document_id)}'."
+                   for c in state.classifications if c.needs_review]
         untrusted = [f for f in found if not f.evidence.verification.is_trusted]
         if untrusted:
             review.append(f"{len(untrusted)} dato(s) con evidencia no verificada.")
         real = [d for d in state.discrepancies if d.kind != "formato"]
-        review += [f"Discrepancia en '{d.field}' ({d.kind})." for d in real]
+        review += [f"Discrepancia en '{d.field}' ({d.kind})." + (" POSIBLE INMUEBLE DISTINTO." if d.possible_different_property else "") for d in real]
         indet = [r for r in state.rules if r.outcome == Outcome.INDETERMINATE]
         review += [f"Regla indeterminada: {r.rule_id} — {r.message}" for r in indet]
         prov_fail = [r for r in state.rules if r.outcome == Outcome.FAIL and r.provisional]
@@ -366,13 +483,18 @@ class VerdictAgent(Agent):
             review.append(f"Confianza global {confidence} inferior al umbral {thr}.")
 
         review_docs = {c.document_id for c in state.classifications if c.needs_review}
+        # "No cumple" solo con regla no provisional fallida, evidencia verificada, documento confiable y lectura sólida (no OCR dudoso/aproximado)
+        solid = lambda e: (e.verification.is_trusted and e.document_id not in review_docs
+                           and (e.verification == Verification.MANUAL
+                                or e.ocr_confidence is None or (e.ocr_confidence >= th.ocr_min_confidence_for_fail and e.exact_match)))
         hard_fail = [r for r in state.rules if r.outcome == Outcome.FAIL and not r.provisional and r.evidence
-                     and all(e.verification.is_trusted and e.document_id not in review_docs for e in r.evidence)]
+                     and all(solid(e) for e in r.evidence)]
 
         satisfied = [r.rule_id for r in state.rules if r.outcome == Outcome.PASS]
         unmet = [r.rule_id for r in state.rules if r.outcome == Outcome.FAIL]
         refs = [e for r in state.rules for e in r.evidence if e.verification.is_trusted]
-        incons = [f"{d.field}: " + " vs ".join(f"{v['doc_type']}='{v['raw']}'" for v in d.values) for d in real]
+        incons = [f"{d.field}: " + " vs ".join(f"{v['doc_type']}='{v['raw']}'" for v in d.values)
+                  + (" [POSIBLE INMUEBLE DISTINTO]" if d.possible_different_property else "") for d in real]
 
         if hard_fail:
             rec, just = Recommendation.FAIL, [f"Incumplimiento sustentado en evidencia verificada: {r.rule_id} — {r.message}" for r in hard_fail]
@@ -380,5 +502,22 @@ class VerdictAgent(Agent):
             rec, just = Recommendation.REVIEW, review
         else:
             rec, just = Recommendation.PASS, ["Todos los requisitos evaluados se cumplen, sin inconsistencias críticas y con confianza suficiente."]
-        return VerdictResult(recommendation=rec, confidence=confidence, justification=just, satisfied=satisfied,
-                             unmet=unmet, missing_documents=missing, inconsistencies=incons, evidence_refs=refs)
+        summary = self._narrate(rec, confidence, level, just, state, names)
+        return VerdictResult(recommendation=rec, confidence=confidence, confidence_level=level, confidence_explanation=explanation,
+                             executive_summary=summary, requires_human_review=rec != Recommendation.PASS, justification=just,
+                             satisfied=satisfied, unmet=unmet, missing_documents=missing, inconsistencies=incons, evidence_refs=refs)
+
+    def _narrate(self, rec: Recommendation, confidence: float, level: str, just: list[str], state: DossierState, names: dict[int, str]) -> str:
+        """El LLM solo redacta; si falla, no responde JSON válido o contradice el veredicto, se usa la plantilla."""
+        fallback = template_summary(rec, confidence, level, just)
+        if self.narrator is None:
+            return fallback
+        quotes = [f"- {names.get(e.document_id, e.document_id)}, pág. {e.page}: \"{e.quote[:120]}\""
+                  for r in state.rules for e in r.evidence if e.verification.is_trusted][:12]
+        user = (f"Recomendación calculada: {_LABELS[rec]}\nConfianza: {level} ({confidence:.0%})\nHallazgos:\n"
+                + "\n".join(f"- {j}" for j in just) + ("\nEvidencias verificadas:\n" + "\n".join(quotes) if quotes else ""))
+        try:
+            text = NarrativeOut.model_validate(self.narrator.complete_json(NARRATIVE_SYSTEM, user)).resumen.strip()
+        except Exception:  # noqa: BLE001 - el resumen es accesorio: cualquier fallo del LLM cae a la plantilla
+            return fallback
+        return fallback if summary_contradicts(text, rec) else text

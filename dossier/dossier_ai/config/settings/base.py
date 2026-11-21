@@ -68,8 +68,12 @@ CELERY_TASK_ALWAYS_EAGER = False
 # Procesamiento local: ningún dato sale a servicios externos salvo autorización explícita del comité.
 OCR_BACKEND = env("OCR_BACKEND", "none")            # none | tesseract
 EXTRACTOR_BACKEND = env("EXTRACTOR_BACKEND", "labels")  # labels | llm (LLM local vía Ollama)
-LLM_MODEL = env("LLM_MODEL", "llama3.1:8b")
+LLM_MODEL = env("LLM_MODEL", "qwen2.5:7b")
 LLM_BASE_URL = env("LLM_BASE_URL", "http://localhost:11434")
+LLM_NUM_CTX = int(env("LLM_NUM_CTX", "16384"))      # Ollama trunca en silencio por defecto: ventana amplia para documentos largos
+NARRATIVE_BACKEND = env("NARRATIVE_BACKEND", "none")  # none | llm: el LLM solo redacta el resumen ejecutivo, nunca decide el veredicto
+OCR_LANG = env("OCR_LANG", "spa")
+RULESET_FILE = env("RULESET_FILE", "")              # opcional: ruta a un .yaml o al .json del comité (rules/reglas_comite.json)
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],

@@ -28,7 +28,8 @@ class Command(BaseCommand):
         self.stdout.write(f"Páginas: {len(pages)}")
         for p in pages:
             n = len(p.text.strip())
-            self.stdout.write(f"  p.{p.page}: {n} caracteres" + ("  <-- SIN TEXTO: probablemente escaneado, active OCR_BACKEND=tesseract" if n < 20 else ""))
+            self.stdout.write(f"  p.{p.page}: {n} caracteres [{p.method}, confianza {p.ocr_confidence:.0f}%]"
+                              + ("  <-- BLANCA" if p.blank else "  <-- SIN TEXTO: probablemente escaneado, active OCR_BACKEND=tesseract" if n < 20 else ""))
             if opts["text"]:
                 self.stdout.write(p.text)
         state = DossierState(dossier_id=0, documents=[DocumentInput(id=1, name=path.name, pages=pages)])

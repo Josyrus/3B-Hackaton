@@ -36,9 +36,9 @@
       <div class="stat"><span>Expedientes</span><b>{{ total }}</b></div>
       <div class="stat"><span>Pendientes</span><b>{{ pending }}</b></div>
       <div class="stat"><span>Analizados</span><b>{{ analyzed }}</b></div>
-      <h6 class="mt-3 mb-2">Recomendaciones emitidas</h6>
+      <h6 class="mt-3 mb-2">Dictámenes emitidos</h6>
       {% if judged %}
-      <div class="rec-bar" role="img" aria-label="Distribución de recomendaciones">{% for d in distribution %}{% if d.n %}<i class="k-{{ d.key }}" style="width:{{ d.pct }}%"></i>{% endif %}{% endfor %}</div>
+      <div class="rec-bar" role="img" aria-label="Distribución de dictámenes">{% for d in distribution %}{% if d.n %}<i class="k-{{ d.key }}" style="width:{{ d.pct }}%"></i>{% endif %}{% endfor %}</div>
       <ul class="list-unstyled small mt-2 mb-0">{% for d in distribution %}<li class="d-flex justify-content-between"><span><span class="chip chip-{{ d.key }}">{{ d.label }}</span></span><span>{{ d.n }}</span></li>{% endfor %}</ul>
       {% else %}<p class="text-muted small mb-0">Aún no hay dictámenes. Cargue su primer expediente.</p>{% endif %}
     </div>

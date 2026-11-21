@@ -1,11 +1,14 @@
 # Configuración versionada del sistema. Todo valor "provisional" está pendiente de confirmación oficial.
 # Un valor null significa "criterio pendiente": el sistema responde INDETERMINADA, nunca inventa un umbral.
-version: "0.1.0-provisional"
+version: "0.2.0-provisional"
 
 thresholds:
   classification_min_confidence: 0.80   # PROVISIONAL
   verdict_min_confidence: 0.80          # PROVISIONAL
-  surface_tolerance_pct: null           # PENDIENTE de criterio oficial
+  surface_tolerance_pct: 5.0            # definido por el comité (null = criterio pendiente -> revisión)
+  text_similarity: 0.82                 # umbral de similitud textual (direcciones/nombres)
+  ocr_min_confidence: 65.0              # por debajo: lectura OCR de baja calidad -> revisión visual
+  ocr_min_confidence_for_fail: 85.0     # un "No cumple" solo se sostiene con OCR de al menos esta confianza
 
 classification_keywords:
   escritura: ["escritura publica", "notario", "notaria", "compraventa", "fe publica", "protocolo", "otorga"]
@@ -47,15 +50,15 @@ schemas:
 
 rules:
   # Presencia de campos clave: PROVISIONALES (criterio de requisitos mínimos pendiente)
-  - {id: escritura.titular.presente, doc_type: escritura, type: required_field, field: titular, provisional: true, category: requisito}
-  - {id: escritura.superficie.presente, doc_type: escritura, type: required_field, field: superficie_terreno, provisional: true, category: requisito}
-  - {id: predial.cuenta.presente, doc_type: predial, type: required_field, field: cuenta_predial, provisional: true, category: requisito}
-  - {id: predial.propietario.presente, doc_type: predial, type: required_field, field: propietario, provisional: true, category: requisito}
-  - {id: alineamiento.numero.presente, doc_type: alineamiento, type: required_field, field: numero_oficial, provisional: true, category: requisito}
-  - {id: uso_suelo.uso.presente, doc_type: uso_suelo, type: required_field, field: uso_autorizado, provisional: true, category: requisito}
+  - {id: escritura.titular.presente, doc_type: escritura, type: required_field, field: titular, provisional: true, category: requisito, severity: critico}
+  - {id: escritura.superficie.presente, doc_type: escritura, type: required_field, field: superficie_terreno, provisional: true, category: requisito, severity: critico}
+  - {id: predial.cuenta.presente, doc_type: predial, type: required_field, field: cuenta_predial, provisional: true, category: requisito, severity: critico}
+  - {id: predial.propietario.presente, doc_type: predial, type: required_field, field: propietario, provisional: true, category: requisito, severity: relevante}
+  - {id: alineamiento.numero.presente, doc_type: alineamiento, type: required_field, field: numero_oficial, provisional: true, category: requisito, severity: relevante}
+  - {id: uso_suelo.uso.presente, doc_type: uso_suelo, type: required_field, field: uso_autorizado, provisional: true, category: requisito, severity: relevante}
   # Vigencia: un documento cuya vigencia declarada ya pasó está vencido (hecho documental)
-  - {id: alineamiento.vigencia, doc_type: alineamiento, type: date_not_expired, field: vigencia, provisional: false, category: vigencia}
-  - {id: uso_suelo.vigencia, doc_type: uso_suelo, type: date_not_expired, field: vigencia, provisional: false, category: vigencia}
+  - {id: alineamiento.vigencia, doc_type: alineamiento, type: date_not_expired, field: vigencia, provisional: false, category: vigencia, severity: relevante}
+  - {id: uso_suelo.vigencia, doc_type: uso_suelo, type: date_not_expired, field: vigencia, provisional: false, category: vigencia, severity: critico}
   # Compatibilidad declarada expresamente en el documento
   - id: uso_suelo.compatibilidad
     doc_type: uso_suelo
@@ -63,14 +66,18 @@ rules:
     field: compatibilidad_uso_comercial
     provisional: false
     category: requisito
+    severity: critico
     params:
       pass: ["si", "compatible", "permitido", "cumple"]
       fail: ["no", "incompatible", "no compatible", "prohibido", "no permitido"]
   # Restricciones: se reportan para revisión (no hay criterio oficial para calificarlas)
-  - {id: uso_suelo.restricciones.informadas, doc_type: uso_suelo, type: report_if_present, field: restricciones, provisional: true, category: restriccion}
+  - {id: uso_suelo.restricciones.informadas, doc_type: uso_suelo, type: report_if_present, field: restricciones, provisional: true, category: restriccion, severity: relevante}
 
 cross_checks:
   - {field: direccion, kind: address, sources: [{doc_type: escritura, field: direccion}, {doc_type: predial, field: direccion}, {doc_type: alineamiento, field: direccion_oficial}, {doc_type: uso_suelo, field: direccion}]}
   - {field: propietario, kind: name, sources: [{doc_type: escritura, field: titular}, {doc_type: predial, field: propietario}]}
   - {field: superficie, kind: area, sources: [{doc_type: escritura, field: superficie_terreno}, {doc_type: predial, field: superficie_registrada}, {doc_type: uso_suelo, field: superficie_aplicable}]}
   - {field: identificacion_predio, kind: identifier, sources: [{doc_type: escritura, field: identificacion_inmueble}, {doc_type: alineamiento, field: identificacion_predio}, {doc_type: uso_suelo, field: identificacion_inmueble}]}
+  # Número oficial (alineamiento) contra los números que aparecen en las direcciones de los demás documentos.
+  # La primera fuente es el número; las demás, direcciones.
+  - {field: numero_oficial, kind: number_in_address, sources: [{doc_type: alineamiento, field: numero_oficial}, {doc_type: escritura, field: direccion}, {doc_type: predial, field: direccion}, {doc_type: uso_suelo, field: direccion}]}

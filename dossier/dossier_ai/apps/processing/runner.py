@@ -15,6 +15,7 @@ from apps.validations.rulesets import active_ruleset
 from core.agents.pipeline import ExtractorFactory, normalize_value, field_kind
 from core.contracts import (Classification as CCls, DocumentInput, DocumentType, DossierState, Evidence, FieldValue,
                             PageText, Verification)
+from core.evidence import verify_evidence
 from core.graph.supervisor import STAGES, Supervisor
 from core.ports import OllamaLLM
 from .models import AgentRun
@@ -39,12 +40,17 @@ class DBObserver:
             Dossier.objects.filter(pk=d.pk).update(progress=payload["progress"])
         elif event == "error":
             AgentRun.objects.filter(pk=self.runs[stage].pk).update(status="error", error=payload["error"], retries=payload["retries"])
+        elif event == "skip":  # etapa omitida por no haber documentos extraíbles: queda registrada en la bitácora
+            AgentRun.objects.create(dossier=d, agent=agent, stage=stage, status="skipped", ruleset_version=self.version)
+            Dossier.objects.filter(pk=d.pk).update(progress=payload["progress"])
 
 
 def build_state(dossier: Dossier, from_stage: str) -> DossierState:
     docs = Document.objects.filter(dossier=dossier, status=DocStatus.OK).prefetch_related("pages")
     state = DossierState(dossier_id=dossier.pk, required_use=dossier.required_use, documents=[
-        DocumentInput(id=d.pk, name=d.original_name, pages=[PageText(page=p.number, text=p.text) for p in d.pages.all()]) for d in docs])
+        DocumentInput(id=d.pk, name=d.original_name, pages=[
+            PageText(page=p.number, text=p.text, method=p.method, ocr_confidence=p.ocr_confidence, blank=p.is_blank)
+            for p in d.pages.all()]) for d in docs])
     idx = STAGES.index
     if idx(from_stage) > idx("ingest"):
         state.duplicates = list(Classification.objects.filter(document__dossier=dossier, is_content_duplicate=True).values_list("document_id", flat=True))
@@ -57,6 +63,12 @@ def build_state(dossier: Dossier, from_stage: str) -> DossierState:
     if idx(from_stage) <= idx("extract"):
         fields = fields.filter(origin="manual")  # los datos corregidos manualmente se conservan
     state.fields = [_to_fv(f) for f in fields]
+    if idx(from_stage) > idx("verify"):
+        # Re-ejecución parcial (p. ej. desde "rules"): la BD no guarda la confianza OCR ni si la coincidencia fue aproximada.
+        # Se recalcula con el verificador para que un "No cumple" nunca se apoye en una lectura OCR dudosa.
+        docs_by_id = {d.id: d for d in state.documents}
+        state.fields = [f.model_copy(update={"evidence": verify_evidence(f.evidence, docs_by_id, f.raw, field_kind(f.name))})
+                        if f.found and f.origin != "manual" else f for f in state.fields]
     return state
 
 
@@ -67,10 +79,27 @@ def _to_fv(f: ExtractedField) -> FieldValue:
                       evidence=Evidence(document_id=f.document_id, page=f.page, quote=f.quote, verification=Verification(f.verification)))
 
 
+_LLM: OllamaLLM | None = None
+
+
+def get_llm() -> OllamaLLM:
+    """Configuración centralizada del LLM: una sola instancia por proceso (el modelo se construye de forma perezosa).
+    Para otro proveedor, implemente `core.ports.LLMPort` y devuélvalo aquí."""
+    global _LLM
+    if _LLM is None:
+        _LLM = OllamaLLM(settings.LLM_MODEL, settings.LLM_BASE_URL, num_ctx=getattr(settings, "LLM_NUM_CTX", 16384))
+    return _LLM
+
+
 def make_factory() -> ExtractorFactory | None:
     if settings.EXTRACTOR_BACKEND == "llm":
-        return ExtractorFactory(active_ruleset()[0], OllamaLLM(settings.LLM_MODEL, settings.LLM_BASE_URL), PROMPT.read_text(encoding="utf-8"))
+        return ExtractorFactory(active_ruleset()[0], get_llm(), PROMPT.read_text(encoding="utf-8"))
     return None
+
+
+def make_narrator() -> OllamaLLM | None:
+    """El LLM solo redacta el resumen ejecutivo; nunca decide la recomendación (ver VerdictAgent)."""
+    return get_llm() if getattr(settings, "NARRATIVE_BACKEND", "none") == "llm" else None
 
 
 @transaction.atomic
@@ -98,13 +127,14 @@ def persist(dossier: Dossier, state: DossierState, from_stage: str, version: str
     RuleResult.objects.filter(dossier=dossier).delete()
     RuleResult.objects.bulk_create(RuleResult(
         dossier=dossier, rule_id=r.rule_id, doc_type=r.doc_type.value if r.doc_type else "", outcome=r.outcome.value,
-        category=r.category, provisional=r.provisional, message=r.message,
+        category=r.category, severity=r.severity, provisional=r.provisional, message=r.message,
         evidence=[e.model_dump(mode="json") for e in r.evidence], ruleset_version=version) for r in state.rules)
     CrossDiscrepancy.objects.filter(dossier=dossier).delete()
     CrossDiscrepancy.objects.bulk_create(CrossDiscrepancy(dossier=dossier, field=d.field, kind=d.kind, critical=d.critical, values=d.values) for d in state.discrepancies)
     v = state.verdict
     Verdict.objects.create(dossier=dossier, recommendation=v.recommendation.value, confidence=v.confidence,
-                           payload={**v.model_dump(mode="json"), "warnings": state.warnings}, ruleset_version=version)
+                           payload={**v.model_dump(mode="json"), "warnings": state.warnings,
+                                    "log": [e.model_dump(mode="json") for e in state.log]}, ruleset_version=version)
     Dossier.objects.filter(pk=dossier.pk).update(status=DossierStatus.ANALYZED, progress=100, current_stage="verdict",
                                                  recommendation=v.recommendation.value, confidence=v.confidence)
 
@@ -114,7 +144,7 @@ def run_analysis(dossier_id: int, from_stage: str = "ingest") -> None:
     ruleset, version = active_ruleset()
     state = build_state(dossier, from_stage)
     try:
-        state = Supervisor(ruleset, DBObserver(dossier, version), make_factory()).run(state, from_stage)
+        state = Supervisor(ruleset, DBObserver(dossier, version), make_factory(), narrator=make_narrator()).run(state, from_stage)
         persist(dossier, state, from_stage, version)
     except Exception:
         Dossier.objects.filter(pk=dossier_id).update(status=DossierStatus.ERROR)
