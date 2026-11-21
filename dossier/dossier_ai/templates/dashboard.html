@@ -1,20 +1,52 @@
-{% extends "base.html" %}{% block content %}
+{% extends "base.html" %}{% load labels %}{% block content %}
 <style>
-.drop{border:2px dashed #9fb2bf;border-radius:8px;background:var(--card);padding:2.5rem 1.5rem;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
-.drop:hover,.drop.over{border-color:var(--accent);background:#eef7f6}
-.drop-title{font-family:var(--serif);font-size:1.6rem;margin-bottom:.25rem}
+.drop{border:2px dashed #b9c8dc;border-radius:var(--radius);background:linear-gradient(180deg,#fafcff,#f3f7fc);padding:2.2rem 1.5rem;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+.drop:hover,.drop.over{border-color:var(--blue);background:var(--blue-soft)}
+.drop-title{font-size:1.15rem;font-weight:650;color:var(--navy-900);margin-bottom:.25rem}
 .files{list-style:none;margin:1rem 0 0;padding:0;text-align:left}
-.files li{display:flex;justify-content:space-between;gap:1rem;padding:.45rem .2rem;border-bottom:1px solid var(--line);font-size:.95rem}
+.files li{display:flex;justify-content:space-between;gap:1rem;padding:.5rem .2rem;border-bottom:1px solid var(--line);font-size:.92rem}
 .files .size{color:var(--muted);white-space:nowrap}
-.rec-bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--line)}
-.rec-bar i{display:block}
-.k-cumple{background:var(--ok)}.k-requiere_revision{background:#d19a1f}.k-no_cumple{background:var(--bad)}
-.stat{display:flex;justify-content:space-between;align-items:baseline;padding:.55rem 0;border-bottom:1px solid var(--line)}
-.stat b{font-family:var(--serif);font-size:1.4rem}
 </style>
-<div class="row g-4">
-  <div class="col-lg-8">
-    <h2 class="mb-1">Analizar un expediente</h2>
+<div class="page-title">
+  <div><h2>Panel ejecutivo</h2><p>Estado general de los expedientes y dictámenes emitidos.</p></div>
+  <a class="btn btn-accent" href="#nuevo-analisis">Nuevo análisis</a>
+</div>
+
+<section class="kpis" aria-label="Indicadores principales">
+  <div class="kpi"><div class="lbl">Expedientes</div><div class="val">{{ total }}</div><div class="hint">Total registrados</div></div>
+  <div class="kpi neutral"><div class="lbl">Pendientes</div><div class="val">{{ pending }}</div><div class="hint">En proceso o sin analizar</div></div>
+  <div class="kpi"><div class="lbl">Analizados</div><div class="val">{{ analyzed }}</div><div class="hint">Con análisis completo</div></div>
+  {% for d in distribution %}<div class="kpi {% if d.key == 'cumple' %}ok{% else %}bad{% endif %}"><div class="lbl">{{ d.label }}</div><div class="val">{{ d.n }}</div><div class="hint">{% if judged %}{{ d.pct }}% de los dictaminados{% else %}Sin dictámenes aún{% endif %}</div></div>{% endfor %}
+</section>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-5">
+    <div class="panel h-100"><div class="panel-head"><h5>Dictámenes emitidos</h5><span class="sub">{{ judged }} en total</span></div>
+      <div class="panel-pad">
+      {% if judged %}
+      {% for d in distribution %}{% if d.key == 'cumple' %}{% with ok=d.pct %}
+      <div class="d-flex align-items-center gap-4 flex-wrap">
+        <div class="donut" role="img" aria-label="Distribución de dictámenes" style="background:conic-gradient(var(--ok) 0 {{ ok }}%,var(--bad) {{ ok }}% 100%)"><div><div><b>{{ ok }}%</b><span>aprobados</span></div></div></div>
+        <ul class="legend flex-grow-1">{% endwith %}{% endif %}{% endfor %}
+          {% for d in distribution %}<li><span><i class="dot" style="background:{% if d.key == 'cumple' %}var(--ok){% else %}var(--bad){% endif %}"></i>{{ d.label }}</span><b>{{ d.n }}</b></li>{% endfor %}
+        </ul>
+      </div>
+      {% else %}<p class="empty mb-0">Aún no hay dictámenes. Cargue su primer expediente.</p>{% endif %}
+      </div></div>
+  </div>
+  <div class="col-lg-7">
+    <div class="panel h-100"><div class="panel-head"><h5>Requieren atención</h5><span class="sub">Recientes no aprobados</span></div>
+      {% with na=recent|not_approved %}
+      {% if na %}<ul class="attn">{% for d in na %}<li><div><a class="fw-semibold" href="{% url 'detail' d.pk %}">{{ d.code }}</a><div class="meta">{{ d.created_at|date:"d/m/Y H:i" }}</div></div><span class="chip chip-{{ d.verdict_key }}">{{ d.get_recommendation_label }}</span></li>{% endfor %}</ul>
+      {% else %}<p class="empty mb-0">Ningún expediente reciente requiere atención.</p>{% endif %}
+      {% endwith %}
+    </div>
+  </div>
+</div>
+
+<section id="nuevo-analisis" class="panel mb-4">
+  <div class="panel-head"><h5>Nuevo análisis</h5><span class="sub">PDF o ZIP, hasta {{ max_mb }} MB cada uno</span></div>
+  <div class="panel-pad">
     <p class="text-muted mb-3">Suba los documentos del inmueble: escrituras, predial, alineamiento y número oficial, y uso de suelo. El análisis comienza al cargarlos.</p>
     <form method="post" enctype="multipart/form-data" id="upload-form" novalidate>{% csrf_token %}
       <label class="drop d-block w-100" id="drop" for="file-input">
@@ -24,28 +56,18 @@
       <input type="file" id="file-input" name="files" multiple accept=".pdf,.zip,application/pdf,application/zip" class="visually-hidden">
       <ul class="files" id="file-list" aria-live="polite"></ul>
       <p class="text-danger small mb-0" id="file-error" role="alert"></p>
-      <div class="d-flex align-items-center gap-3 mt-3">
+      <div class="d-flex align-items-center gap-3 mt-3 flex-wrap">
         <button class="btn btn-accent btn-lg" id="submit" disabled>Crear expediente y analizar</button>
         <span class="text-muted small">Los documentos se procesan en este equipo y se guardan de forma privada.</span>
       </div>
     </form>
   </div>
-  <div class="col-lg-4">
-    <div class="panel panel-pad">
-      <h5 class="mb-2">Resumen</h5>
-      <div class="stat"><span>Expedientes</span><b>{{ total }}</b></div>
-      <div class="stat"><span>Pendientes</span><b>{{ pending }}</b></div>
-      <div class="stat"><span>Analizados</span><b>{{ analyzed }}</b></div>
-      <h6 class="mt-3 mb-2">Dictámenes emitidos</h6>
-      {% if judged %}
-      <div class="rec-bar" role="img" aria-label="Distribución de dictámenes">{% for d in distribution %}{% if d.n %}<i class="k-{{ d.key }}" style="width:{{ d.pct }}%"></i>{% endif %}{% endfor %}</div>
-      <ul class="list-unstyled small mt-2 mb-0">{% for d in distribution %}<li class="d-flex justify-content-between"><span><span class="chip chip-{{ d.key }}">{{ d.label }}</span></span><span>{{ d.n }}</span></li>{% endfor %}</ul>
-      {% else %}<p class="text-muted small mb-0">Aún no hay dictámenes. Cargue su primer expediente.</p>{% endif %}
-    </div>
-  </div>
+</section>
+
+<div class="panel">
+  <div class="panel-head"><h5>Expedientes recientes</h5><a href="{% url 'list' %}">Ver todos</a></div>
+  <div class="px-2 pb-2">{% include "_table.html" with dossiers=recent %}</div>
 </div>
-<div class="d-flex justify-content-between align-items-baseline mt-5 mb-2"><h4 class="mb-0">Expedientes recientes</h4><a href="{% url 'list' %}">Ver todos</a></div>
-<div class="panel px-3 pt-2">{% include "_table.html" with dossiers=recent %}</div>
 {% endblock %}
 {% block scripts %}<script>
 (function(){

@@ -1,10 +1,10 @@
 {% extends "base.html" %}{% load labels %}{% block content %}
-<h3>Progreso — {{ dossier.code }}</h3>
-<div class="progress mb-3" style="height:24px"><div id="bar" class="progress-bar" style="width:{{ dossier.progress }}%">{{ dossier.progress }}%</div></div>
-<p>Estado: <b id="status">{{ dossier.get_status_display }}</b> · Agente actual: <b id="stage">{{ dossier.current_stage }}</b></p>
+<div class="page-title"><div><h3>Análisis en curso</h3><p>{{ dossier.code }}</p></div><a class="btn btn-accent" href="{% url 'detail' dossier.pk %}">Ver detalle</a></div>
+<div class="panel panel-pad mb-3">
+<div class="progress mb-3" style="height:14px"><div id="bar" class="progress-bar" style="width:{{ dossier.progress }}%">{{ dossier.progress }}%</div></div>
+<div class="d-flex gap-4 flex-wrap"><div><div class="text-muted small">Estado</div><b id="status">{{ dossier.get_status_display }}</b></div><div><div class="text-muted small">Agente actual</div><b id="stage">{{ dossier.current_stage }}</b></div></div></div>
 <table class="table table-sm bg-white"><thead><tr><th>Agente</th><th>Estado</th><th>ms</th><th>Reintentos</th><th>Error</th></tr></thead><tbody id="runs">
-{% for r in runs %}<tr><td>{{ r.agent|agent_label }}</td><td>{{ r.status }}</td><td>{{ r.duration_ms }}</td><td>{{ r.retries }}</td><td>{{ r.error }}</td></tr>{% endfor %}</tbody></table>
-<a class="btn btn-accent" href="{% url 'detail' dossier.pk %}">Ver detalle</a>{% endblock %}
+{% for r in runs %}<tr><td>{{ r.agent|agent_label }}</td><td>{{ r.status }}</td><td>{{ r.duration_ms }}</td><td>{{ r.retries }}</td><td>{{ r.error }}</td></tr>{% endfor %}</tbody></table>{% endblock %}
 {% block scripts %}<script>
 const url="{% url 'progress_json' dossier.pk %}";
 async function tick(){const r=await fetch(url);const d=await r.json();

@@ -364,6 +364,9 @@ class CrossValidationAgent(Agent):
                                  "normalized": fv.normalized, "evidence": fv.evidence.model_dump(mode="json")})
             if len(vals) < 2:
                 continue
+            first = chk.sources[0]
+            if chk.kind == "number_in_address" and (vals[0]["doc_type"], vals[0]["field"]) != (first.doc_type.value, first.field):
+                continue  # sin el documento que fija el número oficial no hay contra qué comparar (no tomar una dirección como número)
             d = self._compare(chk.field, chk.kind, vals, th.surface_tolerance_pct, th.text_similarity)
             if d:
                 out.append(d)

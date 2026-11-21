@@ -141,9 +141,9 @@ Define las interfaces (*puertos*) que usan los agentes y sus adaptadores concret
 
 ## 6.1 Pantallas
 
-- **Inicio**: zona para arrastrar PDFs/ZIP, resumen y dictámenes emitidos (Aprobado / No aprobado).
+- **Inicio (Panel ejecutivo)**: indicadores principales (expedientes, pendientes, analizados, aprobados, no aprobados), gráfica de dictámenes, bloque «Requieren atención» con los expedientes recientes no aprobados, zona para arrastrar PDFs/ZIP y expedientes recientes. Todos los indicadores salen de datos que ya existían; no se calculan métricas nuevas.
 - **Expedientes**: lista filtrable por fecha, estado y dictamen.
-- **Detalle de un expediente**, en pestañas que siguen el orden del análisis: *Documentos* (con calidad de lectura y avisos) → *Clasificación* (corregible) → *Información extraída* (corregible) → *Reglas* → *Inconsistencias* → *Evidencia* (cita y enlace al PDF en la página) → *Bitácora* (agentes, tiempos, reintentos) → **Dictamen final** al final.
+- **Detalle de un expediente**: franja de indicadores (documentos, datos extraídos y verificados, reglas cumplidas / por revisar / incumplidas, inconsistencias), aviso de documentos faltantes y pestañas que siguen el orden del análisis: *Documentos* (con calidad de lectura y avisos) → *Clasificación* (corregible) → *Información extraída* (corregible) → *Reglas* → *Inconsistencias* → *Evidencia* (cita y enlace al PDF en la página) → *Bitácora* (agentes, tiempos, reintentos) → **Dictamen final** al final.
 - **Progreso**: avance en vivo de los agentes.
 - **Configuración** (solo administrador técnico).
 

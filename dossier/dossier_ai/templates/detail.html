@@ -1,8 +1,22 @@
 {% extends "base.html" %}{% load labels %}{% block title %}{{ dossier.code }} · 3B Verify{% endblock %}{% block content %}
-<div class="d-flex justify-content-between align-items-center"><h3>{{ dossier.code }}</h3>
-<div>{% if verdict %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'pdf' %}">PDF</a> <a class="btn btn-outline-secondary btn-sm" href="{% url 'export' dossier.pk 'json' %}">JSON</a>{% endif %}
-{% if user.can_correct %}<form class="d-inline" method="post" action="{% url 'rerun' dossier.pk %}">{% csrf_token %}<button class="btn btn-sm btn-accent">Re-ejecutar validaciones</button></form>{% endif %}</div></div>
-<ul class="nav nav-tabs my-3" role="tablist">
+<div class="page-title">
+<div><h3>{{ dossier.code }}</h3><p>{{ dossier.get_status_display }} · creado el {{ dossier.created_at|date:"d/m/Y H:i" }}</p></div>
+<div class="d-flex gap-2 flex-wrap align-items-center">
+{% if verdict %}<a class="btn btn-accent" href="#t1" id="go-verdict">Ver dictamen final</a><a class="btn btn-outline-secondary" href="{% url 'export' dossier.pk 'pdf' %}">PDF</a><a class="btn btn-outline-secondary" href="{% url 'export' dossier.pk 'json' %}">JSON</a>{% endif %}
+{% if user.can_correct %}<form class="d-inline" method="post" action="{% url 'rerun' dossier.pk %}">{% csrf_token %}<button class="btn btn-outline-secondary">Re-ejecutar validaciones</button></form>{% endif %}</div></div>
+
+<section class="kpis" aria-label="Indicadores del expediente">
+<div class="kpi"><div class="lbl">Documentos</div><div class="val">{{ documents|length }}</div><div class="hint">Cargados en el expediente</div></div>
+<div class="kpi"><div class="lbl">Datos extraídos</div><div class="val">{{ found_fields|length }}</div><div class="hint">{{ found_fields|count_by:"verification=verificada" }} con evidencia verificada</div></div>
+<div class="kpi ok"><div class="lbl">Reglas cumplidas</div><div class="val">{{ rules|count_by:"outcome=cumple" }}</div><div class="hint">de {{ rules|length }} evaluadas</div></div>
+<div class="kpi {% if rules|count_by:'outcome=indeterminada' %}warn{% else %}neutral{% endif %}"><div class="lbl">Por revisar</div><div class="val">{{ rules|count_by:"outcome=indeterminada" }}</div><div class="hint">Reglas sin resultado firme</div></div>
+<div class="kpi {% if rules|count_by:'outcome=no_cumple' %}bad{% else %}neutral{% endif %}"><div class="lbl">Reglas incumplidas</div><div class="val">{{ rules|count_by:"outcome=no_cumple" }}</div><div class="hint">Incumplimientos detectados</div></div>
+<div class="kpi {% if discrepancies|length %}warn{% else %}neutral{% endif %}"><div class="lbl">Inconsistencias</div><div class="val">{{ discrepancies|length }}</div><div class="hint">Entre documentos</div></div>
+</section>
+{% if payload.missing_documents or warnings %}<section class="mb-3">
+{% if payload.missing_documents %}<div class="alert alert-warning py-2"><b>Documentos faltantes:</b> {% for m in payload.missing_documents %}{{ m|label }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+</section>{% endif %}
+<ul class="nav nav-tabs mb-3" role="tablist">
 <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#t2">Documentos</a></li>
 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t3">Clasificación</a></li>
 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#t4">Información extraída</a></li>
@@ -14,7 +28,7 @@
 <div class="tab-content">
 <div class="tab-pane fade show active" id="t2">{% for w in warnings %}<div class="alert alert-warning py-1">{{ w }}</div>{% endfor %}<table class="table table-sm bg-white"><tr><th>Archivo</th><th>Estado</th><th>Páginas</th><th>Calidad de lectura</th><th></th></tr>
 {% for d in documents %}<tr><td>{{ d.original_name }}</td><td>{{ d.get_status_display }} {{ d.status_detail }}</td><td>{{ d.page_count }}</td><td>{% if d.ocr_avg is not None %}{{ d.ocr_avg|floatformat:0 }}%{% if d.ocr_avg < 65 %} <span class="text-danger">baja</span>{% endif %}{% else %}—{% endif %}</td><td><a href="{% url 'evidence_viewer' d.pk %}">Abrir</a></td></tr>{% endfor %}</table>
-<p><b>Faltantes:</b> {% for m in payload.missing_documents %}{{ m|label }}{% if not forloop.last %}, {% endif %}{% empty %}ninguno{% endfor %}</p></div>
+<p class="mt-3"><b>Faltantes:</b> {% for m in payload.missing_documents %}{{ m|label }}{% if not forloop.last %}, {% endif %}{% empty %}ninguno{% endfor %}</p></div>
 <div class="tab-pane fade" id="t3"><table class="table table-sm bg-white"><tr><th>Documento</th><th>Tipo</th><th>Estado</th><th>Corregir</th></tr>
 {% for d in documents %}{% if d.classification %}<tr><td>{{ d.original_name }}</td><td>{{ d.classification.doc_type|label }}</td>
 <td>{% if d.classification.manual %}manual{% elif d.classification.needs_review %}<span class="text-danger">revisión humana</span>{% else %}automática{% endif %}{% if d.classification.is_content_duplicate %} · duplicado de contenido{% endif %}</td>
@@ -29,7 +43,7 @@
 <div class="tab-pane fade" id="t8"><table class="table table-sm bg-white"><tr><th>Agente</th><th>Estado</th><th>ms</th><th>Reintentos</th><th>Config</th><th>Error</th></tr>
 {% for r in runs %}<tr><td>{{ r.agent|agent_label }}</td><td>{{ r.status }}</td><td>{{ r.duration_ms }}</td><td>{{ r.retries }}</td><td>{{ r.ruleset_version }}</td><td>{{ r.error }}</td></tr>{% endfor %}</table></div>
 <div class="tab-pane fade" id="t1">{% if verdict %}
-<div class="panel panel-pad mb-3"><h4>Dictamen final: <span class="badge badge-{{ dossier.verdict_key }}">{{ dossier.get_recommendation_label }}</span></h4>
+<div class="panel panel-pad mb-3"><div class="d-flex align-items-center gap-3 flex-wrap mb-3"><h4 class="mb-0">Dictamen final</h4><span class="badge badge-{{ dossier.verdict_key }}">{{ dossier.get_recommendation_label }}</span></div>
 {% if dossier.verdict_key == "cumple" %}<p class="mb-3">El expediente cumple con los requisitos evaluados.</p>
 {% else %}<p class="mb-3">El expediente no puede aprobarse con la información actual. Motivos:</p>
 <ul>{% for j in reasons %}<li>{{ j|humanize }}</li>{% empty %}<li>Requiere revisión de los documentos cargados.</li>{% endfor %}</ul>{% endif %}
@@ -40,3 +54,7 @@
 <p class="text-muted small mb-0">{{ payload.disclaimer }}</p></div>
 {% else %}<div class="alert alert-info">Aún sin dictamen. <a href="{% url 'progress' dossier.pk %}">Ver progreso</a></div>{% endif %}</div>
 </div>{% endblock %}
+{% block scripts %}<script>
+(function(){var b=document.getElementById('go-verdict');if(!b)return;
+b.addEventListener('click',function(e){e.preventDefault();var t=document.querySelector('.nav-tabs a[href="#t1"]');if(t){t.click();t.scrollIntoView({block:'center'});}});})();
+</script>{% endblock %}

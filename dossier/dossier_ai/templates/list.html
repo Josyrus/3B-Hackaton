@@ -1,9 +1,9 @@
 {% extends "base.html" %}{% block content %}
-<h3>Expedientes</h3>
-<form class="row g-2 mb-3" method="get">
-<div class="col-auto"><input type="date" class="form-control" name="from" value="{{ f.from }}"></div>
-<div class="col-auto"><input type="date" class="form-control" name="to" value="{{ f.to }}"></div>
-<div class="col-auto"><select class="form-select" name="status"><option value="">Estado</option>{% for v,l in statuses %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
-<div class="col-auto"><select class="form-select" name="recommendation"><option value="">Dictamen</option><option value="aprobado" {% if f.recommendation == "aprobado" %}selected{% endif %}>Aprobado</option><option value="no_aprobado" {% if f.recommendation == "no_aprobado" %}selected{% endif %}>No aprobado</option></select></div>
-<div class="col-auto"><button class="btn btn-accent">Filtrar</button></div></form>
-<div class="panel px-3 pt-2">{% include "_table.html" %}</div>{% endblock %}
+<div class="page-title"><div><h3>Expedientes</h3><p>Consulte y filtre todos los expedientes analizados.</p></div><a class="btn btn-accent" href="{% url 'dashboard' %}#nuevo-analisis">Nuevo análisis</a></div>
+<form class="panel panel-pad mb-3" method="get"><div class="row g-2 align-items-end">
+<div class="col-6 col-md-auto"><label class="form-label small text-muted mb-1">Desde</label><input type="date" class="form-control" name="from" value="{{ f.from }}"></div>
+<div class="col-6 col-md-auto"><label class="form-label small text-muted mb-1">Hasta</label><input type="date" class="form-control" name="to" value="{{ f.to }}"></div>
+<div class="col-6 col-md-auto"><label class="form-label small text-muted mb-1">Estado</label><select class="form-select" name="status"><option value="">Todos</option>{% for v,l in statuses %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+<div class="col-6 col-md-auto"><label class="form-label small text-muted mb-1">Dictamen</label><select class="form-select" name="recommendation"><option value="">Todos</option><option value="aprobado" {% if f.recommendation == "aprobado" %}selected{% endif %}>Aprobado</option><option value="no_aprobado" {% if f.recommendation == "no_aprobado" %}selected{% endif %}>No aprobado</option></select></div>
+<div class="col-auto"><button class="btn btn-accent">Filtrar</button></div></div></form>
+<div class="panel px-2 py-2">{% include "_table.html" %}</div>{% endblock %}

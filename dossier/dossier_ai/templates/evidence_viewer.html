@@ -1,4 +1,4 @@
 {% extends "base.html" %}{% block content %}
-<h5>{{ doc.original_name }} — página {{ page }}</h5>
-{% if quote %}<div class="quote mb-2">{{ quote }}</div>{% endif %}
-<iframe src="{% url 'pdf_file' doc.pk %}#page={{ page }}" style="width:100%;height:80vh;border:1px solid #ccc"></iframe>{% endblock %}
+<div class="page-title"><div><h3>Evidencia</h3><p>{{ doc.original_name }} — página {{ page }}</p></div><a class="btn btn-outline-secondary" href="{% url 'detail' doc.dossier_id %}">Volver al expediente</a></div>
+{% if quote %}<div class="quote mb-3">{{ quote }}</div>{% endif %}
+<iframe src="{% url 'pdf_file' doc.pk %}#page={{ page }}" title="Documento PDF" style="width:100%;height:78vh;border:1px solid var(--line);border-radius:var(--radius);background:#fff"></iframe>{% endblock %}

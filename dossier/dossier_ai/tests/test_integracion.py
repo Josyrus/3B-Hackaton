@@ -362,3 +362,15 @@ def test_binary_verdict_label():
     assert verdict_label("cumple") == "Aprobado"
     assert verdict_label("requiere_revision") == verdict_label("no_cumple") == "No aprobado"
     assert verdict_label("") == ""
+
+
+def test_numero_oficial_check_needs_the_alignment_document():
+    """Regresión: sin constancia de alineamiento, la dirección de la escritura no debe tratarse como 'número oficial'."""
+    s = run([doc_input(1, DOCS["escritura"]), doc_input(2, DOCS["predial"])])
+    assert not any(d.field == "numero_oficial" for d in s.discrepancies)
+
+
+def test_humanize_missing_documents_sentence():
+    from apps.dossiers.labels import humanize
+    out = humanize("Documentos faltantes: alineamiento, uso_suelo.")
+    assert out == "Documentos faltantes: Alineamiento y número oficial, Uso de suelo."

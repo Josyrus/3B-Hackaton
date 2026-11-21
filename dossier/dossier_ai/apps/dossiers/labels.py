@@ -69,8 +69,13 @@ def label(value) -> str:
     return LOOKUP.get(s, s)
 
 
+_MISSING_RE = re.compile(r"(Documentos faltantes:\s*)([^.]*)")
+
+
 def humanize(text) -> str:
-    return _TOKEN_RE.sub(lambda m: _MAP[m.group(1)], str(text))
+    out = _TOKEN_RE.sub(lambda m: _MAP[m.group(1)], str(text))
+    # La lista de faltantes usa los valores internos de tipo documental ("alineamiento", "predial"…): se traducen aquí.
+    return _MISSING_RE.sub(lambda m: m.group(1) + ", ".join(DOC_TYPES.get(p.strip(), p.strip()) for p in m.group(2).split(",")), out)
 
 
 def is_approved(recommendation: str) -> bool:
