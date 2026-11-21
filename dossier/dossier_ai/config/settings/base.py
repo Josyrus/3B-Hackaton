@@ -66,7 +66,10 @@ CELERY_TASK_ACKS_LATE = True
 CELERY_TASK_ALWAYS_EAGER = False
 
 # Procesamiento local: ningún dato sale a servicios externos salvo autorización explícita del comité.
-OCR_BACKEND = env("OCR_BACKEND", "none")            # none | tesseract
+OCR_BACKEND = env("OCR_BACKEND", "none")            # none | tesseract | paddleocr
+PADDLEOCR_LANG = env("PADDLEOCR_LANG", "es")
+PADDLEOCR_USE_ANGLE_CLS = env("PADDLEOCR_USE_ANGLE_CLS", "true").lower() in ("true", "1", "yes")
+PADDLEOCR_USE_GPU = env("PADDLEOCR_USE_GPU", "false").lower() in ("true", "1", "yes")
 EXTRACTOR_BACKEND = env("EXTRACTOR_BACKEND", "labels")  # labels | llm (LLM local vía Ollama)
 LLM_MODEL = env("LLM_MODEL", "llama3.1:8b")
 LLM_BASE_URL = env("LLM_BASE_URL", "http://localhost:11434")

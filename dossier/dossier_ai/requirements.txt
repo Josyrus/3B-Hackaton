@@ -11,7 +11,7 @@ langgraph>=0.2
 langchain-core>=0.3
 psycopg2-binary>=2.9
 dj-database-url>=2.2
-# Opcionales (procesamiento local): pytesseract (OCR), langchain-ollama (LLM local)
+# Opcionales (procesamiento local): pytesseract (OCR), langchain-ollama (LLM local), paddleocr, paddlepaddle
 pytest>=8
 pytest-django>=4.8
 ruff>=0.5

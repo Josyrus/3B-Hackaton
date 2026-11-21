@@ -81,14 +81,39 @@ tratamiento de restricciones/condicionantes. Reglas **no** provisionales (hechos
 ## Seguridad
 Roles (analista / supervisor / admin técnico), CSRF, PDFs en `PRIVATE_STORAGE_ROOT` servidos solo por vista autenticada (`no-store`), validación de firma `%PDF`,
 límites de tamaño, ZIP con defensa de path traversal / zip bomb / entradas no PDF, auditoría sin contenido documental, secretos por entorno,
-procesamiento 100 % local (OCR Tesseract y LLM Ollama intercambiables). Bootstrap se carga de CDN (no recibe datos); para entornos aislados sírvalo desde `/static/`.
+procesamiento 100 % local (OCR Tesseract / PaddleOCR y LLM Ollama intercambiables). Bootstrap se carga de CDN (no recibe datos); para entornos aislados sírvalo desde `/static/`.
+
+## OCR con PaddleOCR (Español / Rotación de ángulo)
+El sistema incluye integración completa con [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR/blob/main/readme/README_es.md) para el reconocimiento óptico de caracteres en escaneos e imágenes de expedientes:
+- **Modelo multilingüe en español (`lang='es'`)**: Reconocimiento de alta precisión en caracteres con acentos, eñes y formatos notariales/catastrales.
+- **Clasificador de ángulo / orientación (`use_textline_orientation=True`)**: Corrige documentos o páginas escaneadas al revés o rotadas (180°).
+- **Procesamiento 100% local**: Compatible con CPU o aceleración por GPU CUDA (`use_gpu=True`).
+
+### Activación en el sistema:
+1. Instalar dependencias opcionales:
+   ```bash
+   pip install paddlepaddle paddleocr
+   ```
+2. Configurar variables de entorno en `.env`:
+   ```bash
+   OCR_BACKEND=paddleocr
+   PADDLEOCR_LANG=es
+   PADDLEOCR_USE_ANGLE_CLS=true
+   PADDLEOCR_USE_GPU=false
+   ```
+3. O utilizar la herramienta CLI independiente para pruebas o extracción por lotes:
+   ```bash
+   python scripts/paddle_ocr_tool.py --image documento.jpg --lang es --json
+   python scripts/paddle_ocr_tool.py --pdf expediente.pdf --lang es
+   python scripts/paddle_ocr_tool.py --demo
+   ```
 
 ## API
 `GET /api/dossiers/`, `GET /api/dossiers/<id>/` (incluye dictamen), `POST /api/dossiers/<id>/rerun/` (supervisor/admin). Autenticación por sesión.
 
 ## Límites conocidos (honestos)
 - El extractor por defecto es **determinista por etiquetas** ("Campo: valor"); funciona con documentos de texto estructurado. Para documentos libres/escaneados use
-  `EXTRACTOR_BACKEND=llm` (Ollama local) y `OCR_BACKEND=tesseract`; ambos están implementados pero **no se probaron contra documentos reales ni un LLM real** en este entorno.
+  `EXTRACTOR_BACKEND=llm` (Ollama local) y `OCR_BACKEND=paddleocr` (o `tesseract`); ambos están implementados pero **no se probaron contra documentos reales ni un LLM real** en este entorno.
 - La precisión ≥ 85 % y 5 min/expediente deben medirse con dictámenes de referencia reales; el sistema los hace medibles (bitácora con ms por agente), pero no hay corpus aquí.
 - Clasificación por palabras clave configurables (sin modelo). Resaltado de la cita dentro del PDF no implementado (se abre la página exacta con `#page=N` y se muestra la cita).
 - Normalización de direcciones: diccionario de abreviaturas básico para México; ampliable en `core/normalization.py`.

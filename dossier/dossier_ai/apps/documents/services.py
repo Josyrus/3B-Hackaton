@@ -35,6 +35,13 @@ def get_ocr() -> OCRPort | None:
     if settings.OCR_BACKEND == "tesseract":
         from core.ports import TesseractOCR
         return TesseractOCR()
+    elif settings.OCR_BACKEND == "paddleocr":
+        from core.ports import PaddleOCRAdapter
+        return PaddleOCRAdapter(
+            lang=getattr(settings, "PADDLEOCR_LANG", "es"),
+            use_angle_cls=getattr(settings, "PADDLEOCR_USE_ANGLE_CLS", True),
+            use_gpu=getattr(settings, "PADDLEOCR_USE_GPU", False),
+        )
     return None
 
 
